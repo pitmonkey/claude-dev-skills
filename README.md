@@ -7,7 +7,6 @@ Personal Claude Code skills plugin for dev workflows.
 | Skill | Description |
 |-------|-------------|
 | `claude-allows` | Add standard permissions to `.claude/settings.local.json` |
-| `commit` | Generate commit message and commit staged changes |
 | `context-audit` | Audit Claude Code setup for token waste and context bloat |
 | `generating-commit-messages` | Generate conventional commit messages |
 | `grill-me` | Interview user relentlessly about a plan or design |
@@ -17,7 +16,6 @@ Personal Claude Code skills plugin for dev workflows.
 | `research-task` | Research a topic and produce a markdown write-up with references |
 | `sc` | Stage and commit current changes, keeping docs updated |
 | `skill-manager-help` | Quick reference for skill-manager MCP commands |
-| `stage` | Safely stage changed files, skipping .env and credentials |
 | `update-docs` | Keep project documentation in sync with code changes |
 
 ## Install
