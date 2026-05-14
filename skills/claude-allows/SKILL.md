@@ -25,7 +25,6 @@ Add the following standard permissions to the current repo's `.claude/settings.l
 Also add the following standard deny entries to `permissions.deny`:
 
 ```json
-"Bash(git push:*)",
 "Glob(**/__pycache__/**)",
 "Glob(.venv/**)",
 "Read(**/__pycache__/**)",
