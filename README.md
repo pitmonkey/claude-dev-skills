@@ -23,3 +23,11 @@ Add this plugin via your marketplace or directly:
 ```
 /plugin install pitmonkey/claude-dev-skills
 ```
+
+## Development Setup
+
+After cloning, activate the pre-commit hook (auto-increments patch version on each commit):
+
+```
+git config core.hooksPath .hooks
+```

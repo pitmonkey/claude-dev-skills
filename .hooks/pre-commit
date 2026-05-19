@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -e
+
+PLUGIN_JSON=".claude-plugin/plugin.json"
+
+version=$(grep '"version"' "$PLUGIN_JSON" | sed 's/.*"version": "\(.*\)".*/\1/')
+
+major=$(echo "$version" | cut -d. -f1)
+minor=$(echo "$version" | cut -d. -f2)
+patch=$(echo "$version" | cut -d. -f3)
+
+new_patch=$((patch + 1))
+new_version="${major}.${minor}.${new_patch}"
+
+sed -i "s/\"version\": \"${version}\"/\"version\": \"${new_version}\"/" "$PLUGIN_JSON"
+
+git add "$PLUGIN_JSON"
+
+echo "Version bumped: ${version} → ${new_version}"
