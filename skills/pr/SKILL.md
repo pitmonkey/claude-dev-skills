@@ -50,8 +50,6 @@ gh pr create --title "<title>" --body "$(cat <<'EOF'
 
 ## Test plan
 - [ ] <test step>
-
-🤖 Generated with [Claude Code](https://claude.ai/claude-code)
 EOF
 )"
 ```
