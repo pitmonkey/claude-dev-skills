@@ -161,6 +161,7 @@ If the command fails: quote the exact error and stop.
 
 - NEVER create an issue without showing the draft first
 - NEVER skip the label check
+- NEVER add a "Generated with Claude Code" footer, "🤖" marker, or `Co-Authored-By: Claude` trailer to the issue body — no AI attribution
 - If `gh` is not authenticated, stop immediately and tell the user to run `gh auth login`
 - The suggested fix disclaimer must appear verbatim — do not soften or shorten it
 - If no fix emerged from the conversation, omit the fix section entirely — do not invent one

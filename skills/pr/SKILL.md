@@ -67,5 +67,6 @@ Print the PR URL returned by `gh pr create`.
 
 - NEVER force-push
 - NEVER push to `main` or `master`
+- NEVER add a "Generated with Claude Code" footer, "🤖" marker, or `Co-Authored-By: Claude` trailer to the PR body — no AI attribution
 - If `gh` is not authenticated, tell the user to run `gh auth login`
 - Do not re-create a PR if one already exists for the branch — use `gh pr view` to check first
