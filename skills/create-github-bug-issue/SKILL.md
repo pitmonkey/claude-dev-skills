@@ -1,11 +1,11 @@
 ---
-name: create-github-issue
-description: Use when the user wants to capture a bug or problem from the current conversation as a GitHub issue. Triggered by /create-github-issue, optionally followed by owner/repo.
+name: create-github-bug-issue
+description: Use when the user wants to capture a bug or problem from the current conversation as a GitHub bug-report issue. Triggered by /create-github-bug-issue, optionally followed by owner/repo. For a work order for the autonomous issue-worker, use create-work-issue instead.
 allowed-tools:
   - Bash
 ---
 
-# Create GitHub Issue
+# Create GitHub Bug Issue
 
 Summarise the specific problem or bug discussed in this conversation and create a structured GitHub issue via `gh` CLI. Always shows a draft for review before creating.
 
@@ -13,7 +13,7 @@ Summarise the specific problem or bug discussed in this conversation and create 
 
 ### Step 0 — Parse arguments
 
-Check if the user provided an `owner/repo` argument (e.g. `/create-github-issue pitmonkey/other-repo`).
+Check if the user provided an `owner/repo` argument (e.g. `/create-github-bug-issue pitmonkey/other-repo`).
 
 - If yes: use that repo for all subsequent steps.
 - If no: proceed to Step 1 to auto-detect.
