@@ -164,6 +164,7 @@ If `gh issue create` fails: quote the exact error and stop.
   bot opens a PR.
 - NEVER create an issue without showing the draft first.
 - NEVER finalize without real acceptance criteria — they are the spec the agent tests against.
+- NEVER add a "Generated with Claude Code" footer, "🤖" marker, or `Co-Authored-By: Claude` trailer to the issue body — no AI attribution.
 - Every issue carries all eight sections; empty ones are marked `N/A`, never deleted.
 - Do not invent facts to fill sections. Ask (thin path) or record the fork under Known
   ambiguities.
