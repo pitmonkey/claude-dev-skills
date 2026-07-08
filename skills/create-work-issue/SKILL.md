@@ -1,6 +1,6 @@
 ---
 name: create-work-issue
-description: Use when the user wants to create a GitHub issue structured as a work order for autonomous pickup by the github-dispatcher issue-worker (they add the pickup/claude label later). Triggered by /create-work-issue, optionally followed by owner/repo and a free-text description of the work. For a bug report from the current conversation, use create-github-bug-issue instead.
+description: Use when the user wants to create a GitHub issue structured as a work order for autonomous pickup by the github-dispatcher issue-worker. It applies a `work-order` tracking label for discovery but leaves the arming `pickup/claude` label to the human. Triggered by /create-work-issue, optionally followed by owner/repo and a free-text description of the work. For a bug report from the current conversation, use create-github-bug-issue instead.
 allowed-tools:
   - Bash
 ---
@@ -16,9 +16,11 @@ resolves every gap it hits by making a documented assumption and proceeding.
 So **the issue body is the entire spec.** A vague body yields a PR full of guesses; a
 well-structured one yields a tight, testable PR. This skill produces the structure.
 
-This skill **creates** the issue but **never applies a label** — arming an issue for the
-autonomous worker (adding `pickup/claude`) stays a deliberate human step, the last gate
-before a bot writes a PR.
+This skill applies a `work-order` **tracking** label so every issue it creates is findable as a
+group (`gh issue list --label work-order`). That label is purely a catalog tag — the issue-worker
+keys only on `pickup/claude`, so `work-order` never triggers pickup. The skill **never applies the
+arming `pickup/claude` label** — arming an issue for the autonomous worker stays a deliberate human
+step, the last gate before a bot writes a PR.
 
 ## The work-order template
 
@@ -116,12 +118,30 @@ Before creating, verify the **Acceptance criteria** section is non-empty and non
 (real, testable conditions — not a restated title). If it is missing or empty, do **not**
 create the issue; loop back to interview it, then re-show the draft (Step 3).
 
+### Step 5.5 — Ensure the `work-order` label exists
+
+The issue always carries the `work-order` tracking label. Confirm the repo has it:
+
+```bash
+gh label list --repo <owner/repo> --json name --jq '.[].name'
+```
+
+If `work-order` is not in the list, create it (always create it — do not ask to skip):
+
+```bash
+gh label create work-order --repo <owner/repo> --color 0e8a16 \
+  --description "Work-order issue for the github-dispatcher issue-worker"
+```
+
+If the label already exists, do nothing here (do not re-create it).
+
 ### Step 6 — Create issue
 
 ```bash
 gh issue create \
   --repo <owner/repo> \
   --title "<title>" \
+  --label "work-order" \
   --body "$(cat <<'EOF'
 ## Problem / Context
 <...>
@@ -147,11 +167,13 @@ EOF
 )"
 ```
 
-**Do not pass `--label`.** This skill applies no label — and never `pickup/claude`.
+Pass **only** `--label "work-order"` (the tracking label). **Never** pass `pickup/claude` — that
+arming label is the human's job.
 
 ### Step 7 — Report
 
-Print the issue URL returned by `gh issue create`, then the arming reminder:
+Print the issue URL returned by `gh issue create`. Note the `work-order` label was applied (find
+all work orders with `gh issue list --label work-order`), then print the arming reminder:
 
 > Add the `pickup/claude` label to this issue when you want the issue-worker to implement it.
 
@@ -159,9 +181,10 @@ If `gh issue create` fails: quote the exact error and stop.
 
 ## Rules
 
-- NEVER apply any label — especially not `pickup/claude`. Arming for autonomous pickup is the
-  human's deliberate step; creating an armed issue would skip the last review gate before a
-  bot opens a PR.
+- ALWAYS apply the `work-order` tracking label (create it via `gh label create` if the repo lacks
+  it). It is a discovery tag only and does not arm the issue.
+- NEVER apply `pickup/claude`. Arming for autonomous pickup is the human's deliberate step;
+  creating an armed issue would skip the last review gate before a bot opens a PR.
 - NEVER create an issue without showing the draft first.
 - NEVER finalize without real acceptance criteria — they are the spec the agent tests against.
 - NEVER add a "Generated with Claude Code" footer, "🤖" marker, or `Co-Authored-By: Claude` trailer to the issue body — no AI attribution.
