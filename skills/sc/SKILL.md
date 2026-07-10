@@ -27,13 +27,19 @@ If the current branch is `main` or `master`:
 
 If already on a feature branch (anything other than `main`/`master`): proceed directly to Step 1.
 
-### Step 1 — Check for changes
+### Step 1 — Update documentation
 
-Run `git status` to confirm there are changes to commit. If the working tree is clean, stop and tell the user.
+Invoke the `update-docs` skill. Always. Every `/sc` invocation, without exception.
 
-### Step 2 — Update documentation
+This step syncs documentation against the **current state of the whole codebase** — not against the pending diff. Doc drift accumulates across every commit that never touched docs, and this is the checkpoint where it gets reconciled.
 
-Invoke the `update-docs` skill to ensure documentation reflects the current state of the codebase before it is committed.
+- An empty or clean working tree is **not** a reason to skip this step. There may be hundreds of prior commits that never updated the docs.
+- A small diff is not a reason to skip it either.
+- Do not gate this step on `git status`, `git diff`, or commit size. Run it first, unconditionally.
+
+### Step 2 — Check for changes
+
+Now run `git status`. If the working tree is still clean after Step 1 — meaning `update-docs` also found nothing to change — stop and tell the user.
 
 ### Step 3 — Stage changes
 
@@ -41,7 +47,7 @@ Follow the `stage` skill to safely stage all modified files:
 - Run `git status` to see all modified, new, and deleted files
 - Stage files explicitly by name — do NOT use `git add -A` or `git add .` blindly
 - Skip `.env*` files, private keys, and any file containing secrets or credentials
-- Include any documentation files updated in Step 2
+- Include any documentation files updated in Step 1
 - Run `git status` again to confirm what is staged
 
 ### Step 4 — Commit
@@ -55,6 +61,7 @@ Invoke the `generating-commit-messages` skill to produce the commit message, the
 
 ## Rules
 
+- **ALWAYS run `update-docs`** — on every invocation, before the clean-tree check. Never skip it because the working tree is clean, because there is nothing to commit, or because the diff is small.
 - **NEVER push** — not under any circumstances, even if asked. Pushing is always out of scope for this skill.
 - NEVER stage sensitive files (`.env*`, `*.pem`, `*.key`, credentials)
 - If there is nothing to stage after Step 3, stop and tell the user
