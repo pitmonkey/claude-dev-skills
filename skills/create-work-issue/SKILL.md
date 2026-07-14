@@ -16,9 +16,11 @@ resolves every gap it hits by making a documented assumption and proceeding.
 So **the issue body is the entire spec.** A vague body yields a PR full of guesses; a
 well-structured one yields a tight, testable PR. This skill produces the structure.
 
-This skill **creates** the issue but **never applies a label** — arming an issue for the
-autonomous worker (adding `pickup/claude`) stays a deliberate human step, the last gate
-before a bot writes a PR.
+This skill **creates** the issue and stamps it with the marker label **`claude-drafted`** so
+every skill-created issue stays findable for later triage — but it **never applies
+`pickup/claude`**. Arming an issue for the autonomous worker (adding `pickup/claude`) stays a
+deliberate human step, the last gate before a bot writes a PR: list the candidates with
+`gh issue list --label claude-drafted`, then arm the ones you pick.
 
 ## The work-order template
 
@@ -116,12 +118,23 @@ Before creating, verify the **Acceptance criteria** section is non-empty and non
 (real, testable conditions — not a restated title). If it is missing or empty, do **not**
 create the issue; loop back to interview it, then re-show the draft (Step 3).
 
-### Step 6 — Create issue
+### Step 6 — Ensure the marker label exists
+
+Make sure the `claude-drafted` label exists in the target repo; create it if missing:
+
+```bash
+gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx claude-drafted \
+  || gh label create claude-drafted --repo <owner/repo> --color 5319e7 \
+     --description "Drafted by a Claude issue-creation skill; awaiting human triage"
+```
+
+### Step 7 — Create issue
 
 ```bash
 gh issue create \
   --repo <owner/repo> \
   --title "<title>" \
+  --label "claude-drafted" \
   --body "$(cat <<'EOF'
 ## Problem / Context
 <...>
@@ -147,21 +160,24 @@ EOF
 )"
 ```
 
-**Do not pass `--label`.** This skill applies no label — and never `pickup/claude`.
+**Pass `--label "claude-drafted"` only — never `pickup/claude`.** The marker keeps the issue
+findable; arming stays the human's step.
 
-### Step 7 — Report
+### Step 8 — Report
 
 Print the issue URL returned by `gh issue create`, then the arming reminder:
 
-> Add the `pickup/claude` label to this issue when you want the issue-worker to implement it.
+> Stamped `claude-drafted`. List candidates later with `gh issue list --label claude-drafted`,
+> then add `pickup/claude` to the ones you want the issue-worker to implement.
 
 If `gh issue create` fails: quote the exact error and stop.
 
 ## Rules
 
-- NEVER apply any label — especially not `pickup/claude`. Arming for autonomous pickup is the
-  human's deliberate step; creating an armed issue would skip the last review gate before a
-  bot opens a PR.
+- NEVER apply `pickup/claude`. Arming for autonomous pickup is the human's deliberate step;
+  creating an armed issue would skip the last review gate before a bot opens a PR.
+- ALWAYS apply the `claude-drafted` marker to every issue so skill-created issues stay findable
+  for triage. This marker is not `pickup/claude` and does not arm anything.
 - NEVER create an issue without showing the draft first.
 - NEVER finalize without real acceptance criteria — they are the spec the agent tests against.
 - NEVER add a "Generated with Claude Code" footer, "🤖" marker, or `Co-Authored-By: Claude` trailer to the issue body — no AI attribution.
