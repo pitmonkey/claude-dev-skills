@@ -115,6 +115,18 @@ Ask:
 
 **If the suggested label exists:** proceed directly.
 
+**Always ensure the `claude-drafted` marker label exists** (independent of the content-label
+choice above), creating it if missing:
+
+```bash
+gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx claude-drafted \
+  || gh label create claude-drafted --repo <owner/repo> --color 5319e7 \
+     --description "Drafted by a Claude issue-creation skill; awaiting human triage"
+```
+
+This marker stamps every skill-created issue so you can later find them with
+`gh issue list --label claude-drafted`. It is applied even when the user skips the content label.
+
 ### Step 6 — Create issue
 
 ```bash
@@ -122,6 +134,7 @@ gh issue create \
   --repo <owner/repo> \
   --title "<title>" \
   --label "<label>" \
+  --label "claude-drafted" \
   --body "$(cat <<'EOF'
 ## Description
 <description>
@@ -148,12 +161,16 @@ EOF
 )"
 ```
 
-Omit `--label` if the user chose to skip labels.
+Omit the content `--label "<label>"` if the user chose to skip labels, but **always keep
+`--label "claude-drafted"`**.
 Omit the `## ⚠️ Suggested Fix` section entirely if no fix was identified.
 
 ### Step 7 — Report
 
-Print the issue URL returned by `gh issue create`.
+Print the issue URL returned by `gh issue create`, then note the marker:
+
+> Stamped `claude-drafted`. List skill-created issues later with
+> `gh issue list --label claude-drafted`.
 
 If the command fails: quote the exact error and stop.
 
@@ -161,6 +178,8 @@ If the command fails: quote the exact error and stop.
 
 - NEVER create an issue without showing the draft first
 - NEVER skip the label check
+- ALWAYS apply the `claude-drafted` marker label, even when the content label is skipped, so
+  skill-created issues stay findable for triage
 - NEVER add a "Generated with Claude Code" footer, "🤖" marker, or `Co-Authored-By: Claude` trailer to the issue body — no AI attribution
 - If `gh` is not authenticated, stop immediately and tell the user to run `gh auth login`
 - The suggested fix disclaimer must appear verbatim — do not soften or shorten it
