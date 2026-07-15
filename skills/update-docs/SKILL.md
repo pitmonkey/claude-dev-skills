@@ -176,4 +176,4 @@ change's new keys is the exact drift this step exists to prevent — enumerate e
 var the code reads across the whole tree and reconcile the full set.
 
 **Never write real secret values into an example env file.** Keys and placeholders
-only, even if a real value is visible in the environment.**
+only, even if a real value is visible in the environment.
