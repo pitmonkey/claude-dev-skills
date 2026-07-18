@@ -6,7 +6,7 @@ Personal Claude Code skills plugin for dev workflows.
 
 | Skill | Description |
 |-------|-------------|
-| `claude-allows` | Add standard permissions to `.claude/settings.local.json` |
+| `claude-allows` | Add standard permissions to a new repo, or audit an existing `.claude/settings.local.json` (categorize, dedupe, prune one-offs) |
 | `create-github-bug-issue` | Capture a bug or problem from the current conversation as a GitHub bug-report issue |
 | `create-work-issue` | Author a structured work-order issue for autonomous pickup by the github-dispatcher issue-worker |
 | `generating-commit-messages` | Generate conventional commit messages |
