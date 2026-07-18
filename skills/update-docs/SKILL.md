@@ -139,6 +139,34 @@ count — "423 tests", "N tests passing") must be re-derived, not carried forwar
 - Scope: counts that are cheap to re-derive and drift silently (test counts). Not an
   open-ended audit of every number in the docs.
 
+### 4c — Local-path reconcile (link to GitHub, don't hard-code local paths)
+
+Docs must not reference source files by absolute local filesystem path — those are
+meaningless off the author's machine and break the moment a directory moves. Scan the
+whole doc set and convert such references to stable forms.
+
+1. **Scan** every doc file (`CLAUDE.md`, `README*`, `docs/**`) for absolute local
+   paths: grep for `/home/`, `/Users/`, `/mnt/`, `/opt/`, leading `~/`, and Windows
+   `C:\`-style paths.
+2. **Classify each hit and rewrite:**
+   - **Inside the current repo** (path under `git rev-parse --show-toplevel`) → replace
+     with the **repo-relative path** (e.g. `src/foo.py`). No URL needed.
+   - **In another repo on disk** → derive the GitHub URL:
+     - repo root: `git -C <dir> rev-parse --show-toplevel`
+     - remote: `git -C <root> remote get-url origin`, normalise both
+       `git@github.com:OWNER/REPO.git` and `https://github.com/OWNER/REPO.git` →
+       `https://github.com/OWNER/REPO` (strip trailing `.git`)
+     - branch: `git -C <root> symbolic-ref --short refs/remotes/origin/HEAD` (strip the
+       `origin/` prefix); fall back to `main`
+     - relative path = the full path minus the repo root
+     - build `https://github.com/OWNER/REPO/blob/<branch>/<relpath>` and swap it in,
+       keeping the surrounding prose intact.
+   - **Not derivable** (target repo absent, or no GitHub remote) → leave the text
+     unchanged and record it for the Step 6 report.
+3. **Scope — stay conservative:** only rewrite prose references to source files. Paths
+   inside fenced code blocks or example commands meant to be run locally are not doc
+   references — skip those.
+
 ## Step 5 — Update todo / work-tracking file (if it exists)
 
 - **Mark completed items** — anything finished in recent commits (check git log from Step 1)
@@ -158,6 +186,7 @@ If a `CHANGELOG.md` was found in Step 1, update it separately — it is release 
 Briefly summarise what was changed in each file and why. Note anything skipped and why (e.g. "No README found").
 - Env-example reconcile: list env keys added/flagged and the example file touched, or why skipped (e.g. "no example env file found").
 - Numeric-claim re-derivation: list any numeric claims corrected (old → new), or why skipped (e.g. "no numeric claims in docs").
+- Local-path reconcile: list paths converted to GitHub URLs (old → new), and any local paths flagged but left as-is because the target repo/remote could not be resolved.
 
 ## Common Mistakes
 
@@ -177,3 +206,10 @@ var the code reads across the whole tree and reconcile the full set.
 
 **Never write real secret values into an example env file.** Keys and placeholders
 only, even if a real value is visible in the environment.
+
+**Don't hard-code local filesystem paths in docs.** A path like
+`/home/user/git/other-repo/src/x.py` is meaningless off the author's machine and breaks
+when anything moves. Reference same-repo files by repo-relative path, and files in other
+repos by GitHub URL (`https://github.com/OWNER/REPO/blob/<branch>/<path>`). If the URL
+can't be derived, flag it in the report rather than leaving a broken local path silently
+in place.
