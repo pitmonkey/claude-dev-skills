@@ -1,0 +1,83 @@
+---
+name: gitgo
+description: Use when the user wants to ship the current work end to end in one step — update docs, stage, commit, push, open a PR, then watch that PR and switch back to main on merge. Triggered by /gitgo.
+---
+
+# Git Go (gitgo)
+
+Ship current work in one command: `/sc` (update-docs + stage + commit) → `/pr`
+(push + open PR) → a self-paced merge-watch that switches to `main` and pulls once
+the PR merges.
+
+This skill is an **orchestrator**. It does NOT re-implement staging, commit-message
+generation, doc-sync, push, or PR-body logic — it invokes the existing `sc` and `pr`
+skills so there is one source of truth. Run the steps in order; each gates the next.
+
+## Process
+
+### Step 1 — Stage + commit (invoke `sc`)
+
+Invoke the `sc` skill via the Skill tool. It handles the branch check (offering a new
+branch if on `main`), `update-docs`, explicit staging, and the commit.
+
+- If `sc` stops because the working tree is clean **and** there are no commits ahead of
+  the remote for this branch, there is nothing to ship — tell the user and STOP. Do not
+  push an empty branch or arm a loop.
+- If `sc` created a commit (or there were already unpushed commits), continue.
+
+### Step 2 — Confirm the push
+
+Pushing and opening a PR is outward-facing and awkward to undo, so pause once here even
+though the earlier steps ran automatically.
+
+- Show a one-line preview: the current branch name and the subject of the HEAD commit.
+- Ask: **"Push `<branch>` and open a PR? (y/n)"**
+- If **no**: stop. The commit stays local; the user can run `/pr` later.
+- If **yes**: continue.
+- Skip this prompt only if the user's `/gitgo` invocation already said to skip it (e.g.
+  they passed `-y`, or the message said "no confirm" / "just go").
+
+### Step 3 — Push + open PR (invoke `pr`)
+
+Invoke the `pr` skill via the Skill tool. It pushes the branch and creates the PR with a
+generated title/body (and reuses an existing PR if one is already open).
+
+- **Fail-fast**: if the push is rejected or `gh pr create` errors, STOP here. Report the
+  error. Do NOT arm the merge-watch — there is no PR to watch.
+- Capture the PR number/URL `pr` reports; the loop needs it.
+
+### Step 4 — Arm the merge-watch (invoke `loop`, dynamic)
+
+Hand the merge-watch to the `loop` skill via the Skill tool, self-paced (no interval),
+passing the PR number so it polls a concrete target. Invoke it as:
+
+```
+Skill({skill: "loop", args: "watch PR #<N> until it merges; when merged, if the working tree is clean switch to main and git pull, otherwise report that the tree is dirty and do NOT switch; stop the loop once handled"})
+```
+
+Dynamic (self-paced) is deliberate over a fixed 5-minute cron: it self-stops the moment
+the PR merges, and it decides its own cadence. The loop is session-only — it dies when
+this Claude session closes; for a watch that must survive that, use `/schedule` instead.
+
+**Load-bearing guard — carry it into the loop prompt (above):** the swap to `main` is
+destructive if the branch has uncommitted or new local work. The loop MUST check
+`git status` is clean before `git checkout main && git pull`. If the tree is dirty, it
+reports that and leaves the branch alone rather than stashing or force-switching.
+
+### Step 5 — Report
+
+Confirm what's running: the commit hash, the PR URL, and that a self-paced merge-watch is
+armed (and will stop itself on merge). Remind the user it is session-only and how to stop
+it early (cancel the loop / `CronDelete` if one was used).
+
+## Rules
+
+- **Compose, don't copy** — always invoke `sc`, `pr`, and `loop` rather than inlining
+  their steps, so a fix in any of them flows through here.
+- **Each step gates the next** — a clean tree stops before push; a failed push/PR stops
+  before the loop. Never arm the merge-watch unless a PR actually exists.
+- **Never push without the Step 2 confirm** unless the user explicitly opted out.
+- **Never force-push, never push to `main`/`master`, never auto-switch a dirty tree.**
+- **No AI attribution** anywhere (commit trailer, PR body) — inherited from `sc`/`pr`.
+- Interruptible: if any invoked skill asks the user something (branch name, PR body) or
+  the user bails, honor it and stop — `/gitgo` is a macro, not an unstoppable pipeline.
