@@ -15,17 +15,23 @@ Run these steps in order:
 
 Run `git branch --show-current` to get the current branch name.
 
-If the current branch is `main` or `master`:
+**Auto-branch mode:** if `sc` was invoked with `auto-branch` in its args (an
+orchestrator like `gitgo` passes this) and the current branch is `main`/`master`,
+skip the y/n question below and create a new branch automatically — steps 3a–3c
+of the "yes" path — then tell the user which branch was created. This is
+non-interactive by design: the caller has already committed to branching.
+
+If the current branch is `main` or `master` (and not in auto-branch mode):
 1. Ask the user: **"You're on `main`. Create a new branch? (y/n)"**
 2. If **no**: continue to Step 1 on main.
-3. If **yes**:
-   - Look at `git diff HEAD` and any staged changes to understand what the work is about.
-   - Generate a short, kebab-case branch name that describes the changes (e.g. `feat/add-login-page`, `fix/webhook-timeout`).
-   - Run `git checkout -b <branch-name>` to create and switch to it.
+3. If **yes** (or auto-branch mode):
+   - (3a) Look at `git diff HEAD` and any staged changes to understand what the work is about.
+   - (3b) Generate a short, kebab-case branch name that describes the changes (e.g. `feat/add-login-page`, `fix/webhook-timeout`).
+   - (3c) Run `git checkout -b <branch-name>` to create and switch to it.
    - Check if there are commits on main that should move to the new branch: run `git log origin/main..HEAD --oneline`. If any commits exist, they are already on the new branch (since we branched from main) — no action needed, just inform the user.
    - Continue to Step 1.
 
-If already on a feature branch (anything other than `main`/`master`): proceed directly to Step 1.
+If already on a feature branch (anything other than `main`/`master`): proceed directly to Step 1 — use the current branch (auto-branch mode is a no-op here).
 
 ### Step 1 — Update documentation
 
