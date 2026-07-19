@@ -52,13 +52,14 @@ confirm CI is green, then wait for the merge. Invoke it as:
 ```
 Skill({skill: "loop", args: "Watch PR #<N> in two phases.
 Phase 1 (CI): run `gh pr checks <N>`. If it reports no checks exist, skip to Phase 2. If any check has FAILED, output FAILURE with the failing check names and STOP the loop — do not wait to merge. If checks are still pending/running, wait ~2 minutes and poll again. When every check has passed, output SUCCESS and continue to Phase 2.
-Phase 2 (merge): watch PR #<N> until it merges; when merged, if the working tree is clean switch to main, git pull, then run `git gone` to delete the now-merged local feature branch, otherwise report the tree is dirty and do NOT switch. Stop the loop once handled."})
+Phase 2 (merge): poll PR #<N> every ~5 minutes until it merges; when merged, if the working tree is clean switch to main, git pull, then run `git gone` to delete the now-merged local feature branch, otherwise report the tree is dirty and do NOT switch. Stop the loop once handled."})
 ```
 
 - **Phase 1** is the ~2-minute CI gate. A red pipeline stops the loop and never advances
   to the merge wait — same fail-fast spirit as the push/PR step. A repo with no checks
   (`gh pr checks` reports none) falls straight through to Phase 2.
-- **Phase 2** is the merge wait: it self-stops the moment the PR merges, then sweeps the
+- **Phase 2** is the merge wait: it polls every ~5 minutes, self-stops the moment the PR
+  merges, then sweeps the
   merged branch with `git gone` (house convention — feature branches are disposable, only
   `main` is long-lived). `git gone` force-deletes locals whose upstream is `[gone]`; it
   needs the remote branch already deleted, which the repo's *auto-delete head branch on
