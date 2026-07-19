@@ -52,13 +52,18 @@ confirm CI is green, then wait for the merge. Invoke it as:
 ```
 Skill({skill: "loop", args: "Watch PR #<N> in two phases.
 Phase 1 (CI): run `gh pr checks <N>`. If it reports no checks exist, skip to Phase 2. If any check has FAILED, output FAILURE with the failing check names and STOP the loop — do not wait to merge. If checks are still pending/running, wait ~2 minutes and poll again. When every check has passed, output SUCCESS and continue to Phase 2.
-Phase 2 (merge): watch PR #<N> until it merges; when merged, if the working tree is clean switch to main and git pull, otherwise report the tree is dirty and do NOT switch. Stop the loop once handled."})
+Phase 2 (merge): watch PR #<N> until it merges; when merged, if the working tree is clean switch to main, git pull, then run `git gone` to delete the now-merged local feature branch, otherwise report the tree is dirty and do NOT switch. Stop the loop once handled."})
 ```
 
 - **Phase 1** is the ~2-minute CI gate. A red pipeline stops the loop and never advances
   to the merge wait — same fail-fast spirit as the push/PR step. A repo with no checks
   (`gh pr checks` reports none) falls straight through to Phase 2.
-- **Phase 2** is the merge wait: it self-stops the moment the PR merges.
+- **Phase 2** is the merge wait: it self-stops the moment the PR merges, then sweeps the
+  merged branch with `git gone` (house convention — feature branches are disposable, only
+  `main` is long-lived). `git gone` force-deletes locals whose upstream is `[gone]`; it
+  needs the remote branch already deleted, which the repo's *auto-delete head branch on
+  merge* setting handles. If the alias is absent or the remote lingers, the sweep is a
+  no-op and the stale branch is left for a manual `git gone` / `git branch -D`.
 
 Dynamic (self-paced) is deliberate over a fixed 5-minute cron: it decides its own cadence
 and self-stops on a CI failure or once the PR merges. The loop is session-only — it dies
@@ -66,15 +71,17 @@ when this Claude session closes; for a watch that must survive that, use `/sched
 
 **Load-bearing guard — carry it into the loop prompt (above), scoped to Phase 2:** the
 swap to `main` is destructive if the branch has uncommitted or new local work. The loop
-MUST check `git status` is clean before `git checkout main && git pull`. If the tree is
-dirty, it reports that and leaves the branch alone rather than stashing or force-switching.
+MUST check `git status` is clean before `git checkout main && git pull && git gone`. If the
+tree is dirty, it reports that and leaves the branch alone rather than stashing or
+force-switching — and skips the `git gone` sweep too, since the branch was never left.
 
 ### Step 4 — Report
 
 Confirm what's running: the commit hash, the PR URL, and that a self-paced two-phase watch
 is armed — it confirms CI is green (printing SUCCESS or FAILURE) before waiting for the
-merge, and stops itself on a CI failure or once the PR merges. Remind the user it is
-session-only and how to stop it early (cancel the loop / `CronDelete` if one was used).
+merge, and stops itself on a CI failure or once the PR merges — sweeping the merged branch
+with `git gone` on a clean tree. Remind the user it is session-only and how to stop it
+early (cancel the loop / `CronDelete` if one was used).
 
 ## Rules
 

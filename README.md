@@ -10,7 +10,7 @@ Personal Claude Code skills plugin for dev workflows.
 | `create-github-bug-issue` | Capture a bug or problem from the current conversation as a GitHub bug-report issue |
 | `create-work-issue` | Author a structured work-order issue for autonomous pickup by the github-dispatcher issue-worker |
 | `generating-commit-messages` | Generate conventional commit messages |
-| `gitgo` | Ship in one step: `sc` (docs+stage+commit) → `pr` (push+PR, no confirm) → self-paced two-phase watch (confirms CI green, then swaps to main + pulls on merge) |
+| `gitgo` | Ship in one step: `sc` (docs+stage+commit) → `pr` (push+PR, no confirm) → self-paced two-phase watch (confirms CI green, then swaps to main + pulls + sweeps the merged branch on merge) |
 | `grill-me` | Interview user relentlessly about a plan or design |
 | `pr` | Push branch and open a GitHub pull request |
 | `python-init` | Set up uv, pytest, ruff, mypy, pre-commit, CI for a Python project |
