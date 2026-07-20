@@ -1,14 +1,17 @@
 ---
 name: gitgo
-description: Use when the user wants to ship the current work end to end in one step — update docs, stage, commit, push, open a PR, then watch that PR and switch back to main on merge. Triggered by /gitgo.
+description: Use when the user wants to ship the current work end to end in one step — update docs, stage, commit, push, open a PR or MR, then watch it and switch back to main on merge. Triggered by /gitgo.
 ---
 
 # Git Go (gitgo)
 
 Ship current work in one command: `/sc` (update-docs + stage + commit) → `/pr`
-(push + open PR) → a self-paced two-phase watch that first confirms CI is green, then
-switches to `main` and pulls once the PR merges. No mid-run confirmation — gitgo pushes
-and opens the PR on its own.
+(push + open PR/MR) → a self-paced two-phase watch that first confirms CI is green, then
+switches to `main` and pulls once it merges. No mid-run confirmation — gitgo pushes
+and opens the request on its own.
+
+Works on GitHub and GitLab. `pr` detects which forge the remote is and reports it; gitgo
+carries that answer into the watch loop and never re-detects.
 
 This skill is an **orchestrator**. It does NOT re-implement staging, commit-message
 generation, doc-sync, push, or PR-body logic — it invokes the existing `sc` and `pr`
@@ -34,20 +37,24 @@ question is skipped. On an existing feature branch `sc` just uses it.
   push an empty branch or arm a loop.
 - If `sc` created a commit (or there were already unpushed commits), continue.
 
-### Step 2 — Push + open PR (invoke `pr`)
+### Step 2 — Push + open PR/MR (invoke `pr`)
 
-Invoke the `pr` skill via the Skill tool. It pushes the branch and creates the PR with a
-generated title/body (and reuses an existing PR if one is already open).
+Invoke the `pr` skill via the Skill tool. It detects the forge, pushes the branch, and
+creates the PR (GitHub) or MR (GitLab) with a generated title/body — reusing an existing
+one if already open.
 
-- **Fail-fast**: if the push is rejected or `gh pr create` errors, STOP here. Report the
-  error. Do NOT arm the merge-watch — there is no PR to watch.
-- Capture the PR number/URL `pr` reports; the loop needs it.
+- **Fail-fast**: if the push is rejected or `gh pr create` / `glab mr create` errors, STOP
+  here. Report the error. Do NOT arm the merge-watch — there is nothing to watch.
+- Capture **both** the request number/URL and the forge `pr` detected; the loop needs both.
 
 ### Step 3 — Arm the merge-watch (invoke `loop`, dynamic)
 
 Hand the watch to the `loop` skill via the Skill tool, self-paced (no interval), passing
-the PR number so it polls a concrete target. The watch runs in **two sequential phases** —
-confirm CI is green, then wait for the merge. Invoke it as:
+the request number so it polls a concrete target. The watch runs in **two sequential
+phases** — confirm CI is green, then wait for the merge. Use the prompt for the forge `pr`
+detected in Step 2.
+
+**GitHub:**
 
 ```
 Skill({skill: "loop", args: "Watch PR #<N> in two phases.
@@ -55,16 +62,27 @@ Phase 1 (CI): run `gh pr checks <N>`. If it reports no checks exist, skip to Pha
 Phase 2 (merge): poll PR #<N> every ~5 minutes until it merges; when merged, if the working tree is clean switch to main, git pull, then run `git gone` to delete the now-merged local feature branch, otherwise report the tree is dirty and do NOT switch. Stop the loop once handled."})
 ```
 
+**GitLab:**
+
+```
+Skill({skill: "loop", args: "Watch MR !<N> in two phases. Read state with `glab api \"projects/:fullpath/merge_requests/<N>\"` — non-interactive JSON; never use a live/TUI view inside the loop.
+Phase 1 (CI): read `head_pipeline.status`. If there is no head_pipeline, skip to Phase 2. If it is failed or canceled, output FAILURE with the pipeline URL and STOP the loop — do not wait to merge. If it is running, pending or created, wait ~2 minutes and poll again. When it is success or skipped, output SUCCESS and continue to Phase 2.
+Phase 2 (merge): poll the same endpoint every ~5 minutes until `state` is merged; if `state` becomes closed, output CLOSED and STOP. When merged, if the working tree is clean switch to main, git pull, then run `git gone` to delete the now-merged local feature branch, otherwise report the tree is dirty and do NOT switch. Stop the loop once handled."})
+```
+
 - **Phase 1** is the ~2-minute CI gate. A red pipeline stops the loop and never advances
   to the merge wait — same fail-fast spirit as the push/PR step. A repo with no checks
-  (`gh pr checks` reports none) falls straight through to Phase 2.
-- **Phase 2** is the merge wait: it polls every ~5 minutes, self-stops the moment the PR
-  merges, then sweeps the
+  (`gh pr checks` reports none / no `head_pipeline`) falls straight through to Phase 2.
+- **Phase 2** is the merge wait: it polls every ~5 minutes, self-stops the moment the
+  request merges, then sweeps the
   merged branch with `git gone` (house convention — feature branches are disposable, only
   `main` is long-lived). `git gone` force-deletes locals whose upstream is `[gone]`; it
-  needs the remote branch already deleted, which the repo's *auto-delete head branch on
-  merge* setting handles. If the alias is absent or the remote lingers, the sweep is a
-  no-op and the stale branch is left for a manual `git gone` / `git branch -D`.
+  needs the remote branch already deleted — on GitHub that is the repo's *auto-delete head
+  branch on merge* setting, on GitLab the MR's *Delete source branch* option. If the alias
+  is absent or the remote lingers, the sweep is a no-op and the stale branch is left for a
+  manual `git gone` / `git branch -D`.
+- `glab api` is used rather than `glab ci status` because the latter can open a live view;
+  the API read is non-interactive and stable across `glab` versions.
 
 Dynamic (self-paced) is deliberate over a fixed 5-minute cron: it decides its own cadence
 and self-stops on a CI failure or once the PR merges. The loop is session-only — it dies
@@ -86,6 +104,8 @@ early (cancel the loop / `CronDelete` if one was used).
 
 ## Rules
 
+- **Forge is detected once, by `pr`** (its Step 0) — gitgo never re-detects and never mixes
+  `gh` with `glab` in one run. It just carries `pr`'s answer into the loop prompt.
 - **Compose, don't copy** — always invoke `sc`, `pr`, and `loop` rather than inlining
   their steps, so a fix in any of them flows through here.
 - **Each step gates the next** — a clean tree stops before push; a failed push/PR stops
