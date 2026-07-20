@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-dev-skills",
+  "description": "pitmonkey's personal dev-workflow skills for Claude Code",
+  "owner": {
+    "name": "pitmonkey",
+    "url": "https://github.com/pitmonkey"
+  },
+  "plugins": [
+    {
+      "name": "claude-dev-skills",
+      "description": "Personal dev skills: git workflows, code review, project setup, productivity",
+      "source": "./",
+      "category": "productivity",
+      "homepage": "https://github.com/pitmonkey/claude-dev-skills"
+    }
+  ]
+}

@@ -35,10 +35,11 @@ require `gh`.
 
 ## Install
 
-Add this plugin via your marketplace or directly:
+This repo is its own marketplace — register it, then install the plugin:
 
 ```
-/plugin install pitmonkey/claude-dev-skills
+/plugin marketplace add pitmonkey/claude-dev-skills
+/plugin install claude-dev-skills@claude-dev-skills
 ```
 
 ## Development Setup
