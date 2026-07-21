@@ -1,7 +1,7 @@
 {
   "name": "claude-dev-skills",
   "description": "Personal dev skills: git workflows, code review, project setup, productivity",
-  "version": "1.0.22",
+  "version": "1.0.23",
   "author": { "name": "happyclap" },
   "repository": "https://github.com/pitmonkey/claude-dev-skills"
 }
