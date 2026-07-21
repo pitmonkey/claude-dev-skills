@@ -33,8 +33,7 @@ hostname against the hosts each CLI already knows before falling back to a netwo
 The issue skills (`create-github-bug-issue`, `create-work-issue`) are GitHub-only. They use
 `gh` in a local terminal session. In a remote session (Claude Code on the web / phone, where
 `CLAUDE_CODE_REMOTE=true`) the session proxy blocks repo-scoped `gh` writes with HTTP 403, so
-`create-work-issue` uses the GitHub MCP tools (`mcp__github__*`) instead — no `gh` required
-there.
+both skills use the GitHub MCP tools (`mcp__github__*`) instead — no `gh` required there.
 
 ## Install
 
