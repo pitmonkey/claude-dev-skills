@@ -45,8 +45,6 @@ Manage the `permissions.allow` / `permissions.deny` arrays in the current repo's
 ## Standard deny defaults
 
 ```json
-"Glob(**/__pycache__/**)",
-"Glob(.venv/**)",
 "Read(**/__pycache__/**)",
 "Read(.venv/**)"
 ```
