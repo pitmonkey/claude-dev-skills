@@ -7,8 +7,8 @@ Personal Claude Code skills plugin for dev workflows.
 | Skill | Description |
 |-------|-------------|
 | `claude-allows` | Add standard permissions to a new repo, or audit an existing `.claude/settings.local.json` (categorize, dedupe, prune one-offs) |
-| `create-github-bug-issue` | Capture a bug or problem from the current conversation as a GitHub bug-report issue |
-| `create-work-issue` | Author a structured work-order issue for autonomous pickup by the github-dispatcher issue-worker |
+| `create-github-bug-issue` | Capture a bug or problem from the current conversation as a GitHub bug-report issue, flagging it `non-autonomous` when the fix needs a human |
+| `create-work-issue` | Author a structured work-order issue for autonomous pickup by the github-dispatcher issue-worker, flagging it `non-autonomous` when the work needs a human |
 | `generating-commit-messages` | Generate conventional commit messages |
 | `gitgo` | Ship in one step: `sc` (docs+stage+commit) → `pr` (push+PR/MR, no confirm) → self-paced two-phase watch (confirms CI green, then swaps to main + pulls + sweeps the merged branch on merge). GitHub or GitLab |
 | `grill-me` | Interview user relentlessly about a plan or design |
@@ -16,6 +16,17 @@ Personal Claude Code skills plugin for dev workflows.
 | `python-init` | Set up uv, pytest, ruff, mypy, pre-commit, CI for a Python project |
 | `sc` | Stage and commit current changes, keeping docs updated |
 | `update-docs` | Keep project documentation in sync with code changes |
+
+### Issue labels
+
+The two issue-creation skills apply markers; arming an issue for the autonomous worker stays a
+human step.
+
+| Label | Applied by | Meaning |
+|-------|-----------|---------|
+| `claude-drafted` | skill, always | Drafted by an issue-creation skill; awaiting human triage. Find them with `gh issue list --label claude-drafted` |
+| `non-autonomous` | skill, when a trigger fires | The work needs a human — secrets, infra, pipelines, generated assets, third-party dashboards, aesthetic judgement. The issue body leads with a banner and a `## Human intervention required` list |
+| `claude/pickup` | **human only** | Arms the issue for the github-dispatcher issue-worker (plan → test-first → PR). The skills never apply it, and never on a `non-autonomous` issue |
 
 ## Requirements
 
