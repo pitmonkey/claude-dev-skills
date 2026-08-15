@@ -268,11 +268,7 @@ uv run mypy .          # types
 
 ## Commands
 
-```bash
-uv run python main.py              # normal run
-DRY_RUN=true uv run python main.py # skip side effects, print output
-uv run pytest                      # run tests
-```
+Setup, usage, and development commands are in `README.md` — read it rather than duplicating them here.
 
 ## Architecture
 

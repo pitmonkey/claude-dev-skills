@@ -13,6 +13,7 @@ Keep project documentation in sync with the current codebase. Do all steps in or
 Run these in parallel:
 - `git log --oneline -20` — recent commits
 - `git diff HEAD` — uncommitted changes (may be empty if just committed)
+- `wc -l CLAUDE.md README.md docs/*.md` — **record the CLAUDE.md count; Step 2 gates on it**
 - Read `CLAUDE.md`
 - Check for README: `README.md`, `README.rst`, `README.txt` (read whichever exists)
 - Check for deployment docs: `docs/deployment.md` (read if found)
@@ -36,37 +37,39 @@ Guiding principles:
 - For prose sections (notes, patterns, known issues): update statements that are now outdated; mark completed items as done
 - Keep it concise — CLAUDE.md is a reference for the AI, not a changelog
 
-### Reference Patterns (Best Practices)
+### The 250-line gate
 
-**CLAUDE.md bloat:** If CLAUDE.md grows beyond ~250 lines, it's a signal to move task-specific content into separate `docs/` files. Bloated CLAUDE.md means:
-- Claude loads unnecessary context for every task
-- Core universal information gets lost in noise
-- Future documentation updates are harder to find
+CLAUDE.md loads on every task in the repo. Over-length means Claude pays context for content most tasks don't need, and the universal rules get lost in the noise. This gate is **measured, never estimated** — reading the file and judging it "about right" is the exact failure the gate exists to prevent.
 
-When updating CLAUDE.md, look for sections that could move to `docs/` — especially content about specific domains (testing, deployment, database, security) that don't apply to every task Claude does in the repo.
+1. Take the CLAUDE.md line count from Step 1's `wc -l`. If you skipped it, run it now.
+2. **Under 250** — record the count for the Step 7 report and continue.
+3. **250 or over** — splitting is **mandatory, not optional**:
+   - Pick the largest task-specific sections — content about a specific domain (testing, deployment, database, security, a subsystem how-to) that doesn't apply to every task Claude does in this repo.
+   - Move each one to its `docs/` file and leave the canonical reference line in its place. Destinations and reference lines: `references/docs-topic-map.md`.
+   - Re-run `wc -l CLAUDE.md` and repeat until it is under 250.
+4. If it is over 250 and genuinely nothing is task-specific enough to move, do **not** pass silently — say so explicitly in the Step 7 report, with the count and why.
 
-Structure CLAUDE.md by moving task-specific topics into `docs/` with reference lines. This keeps CLAUDE.md focused on universal context and lets Claude load task-specific details only when needed.
+**This does not conflict with "do not rewrite sections that are still accurate" above.** That rule governs *content*: don't reword what is still true. The gate governs *placement*: moving an accurate section verbatim into `docs/` is a move, not a rewrite. An accurate section is still a gate violation if it is task-specific and the file is over 250 lines.
 
-Common patterns:
+A how-to that belongs to a topic another doc already owns is a split candidate at any length — see Ownership below.
 
-| Topic | File | Reference Line |
-|-------|------|-----------------|
-| API conventions, request/response standards | `docs/api-standards.md` | `For API conventions, read docs/api-standards.md` |
-| Testing framework setup, test patterns, fixtures | `docs/testing.md` | `For testing guidelines, read docs/testing.md` |
-| Deployment procedures, environment config, infrastructure | `docs/deployment.md` | `For deployment rules, read docs/deployment.md` |
-| Database schema, migrations, queries | `docs/database.md` | `For database schema and migrations, read docs/database.md` |
-| Security policies, encryption, auth | `docs/security.md` | `For security policies, read docs/security.md` |
-| Architecture decisions, trade-offs | `docs/architecture.md` | `For architecture decisions, read docs/architecture.md` |
-| Environment variables & secrets management | `docs/env-config.md` | `For environment setup and secrets, read docs/env-config.md` |
-| Git workflows, CI/CD, branching strategy | `docs/ci-cd.md` | `For CI/CD and branching rules, read docs/ci-cd.md` |
-| Monitoring, alerting, observability | `docs/observability.md` | `For monitoring and dashboards, read docs/observability.md` |
-| Error handling standards, error codes | `docs/errors.md` | `For error handling patterns, read docs/errors.md` |
-| Dependency management, version pins, upgrades | `docs/dependencies.md` | `For dependency policies, read docs/dependencies.md` |
-| Development setup, local environment, IDE config | `docs/dev-setup.md` | `For local development setup, read docs/dev-setup.md` |
+### Ownership — one fact, one home
 
-Use reference lines instead of full content. When updating CLAUDE.md, check if these docs exist and update them if any referenced topics changed in recent commits.
+Every topic has exactly one owning file. Other files link to it; they never carry a copy.
 
-**Note:** Core project files (`README.md`, `CLAUDE.md`) always stay at the root. The "always in docs/" rule applies only to task-specific documentation (testing, deployment, database, security, etc.).
+| Topic | Owner | Everyone else |
+|---|---|---|
+| What the project is, requirements, install, run, test, build/release, contributing | `README.md` | link to it |
+| Agent workflow, planning mandates, repo boundaries, conventions index, doc index | `CLAUDE.md` | — |
+| Architecture, coding conventions, setup detail, testing detail, deployment, ADRs | `docs/*.md` | one-line pointer from `CLAUDE.md` |
+
+When the same fact appears in two files, **delete it from the non-owner and leave a pointer**. Never resolve an overlap by copying, and never by editing both copies to agree — the second copy is the defect, not its staleness.
+
+Two directions, both enforced:
+- CLAUDE.md must not restate README content (install steps, run instructions, feature blurbs).
+- README must not carry internal/implementation detail that belongs in CLAUDE.md or `docs/`.
+
+Checking is cheap: diff the section headings of README.md and CLAUDE.md against each other and against `docs/*.md`. Matching or near-matching headings are where duplication hides.
 
 Common things to check based on project type:
 - **Services/dependencies**: version bumps, new services added, services removed
@@ -76,10 +79,20 @@ Common things to check based on project type:
 
 ## Step 3 — Update README.md and supplementary docs (if they exist)
 
-Update only what has changed. README is user/contributor-facing — keep it high-level.
-- Match the existing structure and tone exactly
-- Update version numbers, feature lists, or setup instructions that are now stale
-- Do not add internal/implementation details that belong in CLAUDE.md
+Update only what has changed. Match the existing structure and tone exactly.
+
+**README is for humans, not agents.** It answers, and only answers:
+- What the project is
+- What is required to run it
+- How to install it
+- How to run it
+- How to test it
+- How to build/release it
+- How to contribute
+
+Keep each at pointer depth — detail lives in `docs/`, per the ownership table. Update version numbers, feature lists, or setup instructions that are now stale.
+
+**Eviction rule:** agent-oriented content found in README — skill invocations, planning mandates, internal conventions, subsystem implementation notes — does not belong there. Move it to `CLAUDE.md` or `docs/` per the ownership table, don't just leave it.
 
 ### Deployment docs (docs/deployment.md)
 
@@ -99,75 +112,22 @@ If no README and no `docs/` exist, skip this step.
 
 ## Step 4 — Config & numeric-claim reconcile
 
-Reconcile machine-checkable facts against the **whole codebase**, not the pending
-diff. Edit files to match reality, exactly as the earlier steps edit docs.
+Three reconciles, each whole-codebase, not diff-local. **Read `references/reconcile.md` for the procedures before running them** — the enumeration rules are what make these work.
 
-### 4a — Env-example reconcile (whole-codebase, not diff-local)
+- **4a — Env-example.** Enumerate every env var the code reads across the whole tree, diff against `.env.example` (or `.sample`/`.template`), and edit the example. Adding only the current change's new keys is the exact bug this step prevents. **Security — load-bearing: NEVER write a real secret value into the example file.** Keys and placeholders only.
+- **4b — Numeric claims.** Any count *about the codebase* ("423 tests") is re-derived by running the project's count command, never carried forward.
+- **4c — Local paths.** Convert same-repo references to repo-relative paths and other-repo references to GitHub URLs; flag what can't be derived for the Step 7 report. Procedure: `references/local-path-reconcile.md`.
 
-1. Enumerate **every** environment variable the code reads, across the whole tree —
-   not just the current change:
-   - Python: `os.getenv(...)`, `os.environ[...]`, `os.environ.get(...)`, and pydantic
-     `BaseSettings` / `Settings` field names (env-mapped fields).
-   - Node/TS: `process.env.X`.
-   - Generic fallback: grep the source tree for env-access patterns for the language
-     in use.
-2. Locate the example env file — first of `.env.example`, `.env.sample`,
-   `.env.template`. If none exists but the code reads env vars, note it in the report;
-   do NOT create one unprompted.
-3. Diff the read-set against the example file and **edit the example**:
-   - Add every key the code reads that the example omits, with a placeholder value or
-     comment (e.g. `LLM_API_KEY=` or `# LLM_API_KEY=<your key>`).
-   - Flag keys in the example the code no longer reads (comment out or remove per the
-     file's convention).
-   - Preserve the file's existing grouping/order.
-4. **Security — load-bearing:** NEVER write a real secret value into the example file.
-   Keys and placeholders only. If you encounter a real value (in the environment or
-   elsewhere), do not copy it in.
+## Step 5 — Formatting hygiene
 
-Adding only the current change's new keys is the exact bug this step exists to prevent:
-reconcile against the whole codebase every time.
+Applies to each doc file this run **already touched**. This is not a repo-wide reformat sweep, and untouched files stay untouched.
 
-### 4b — Numeric-claim re-derivation
+- No runs of 2+ consecutive blank lines; no whitespace-only lines; no trailing whitespace.
+- **Do not hard-wrap Markdown prose.** One line per paragraph — editors and viewers soft-wrap already. Hard wrapping buys nothing, inflates the line count the Step 2 gate measures, and turns a one-word edit into a multi-line reflow diff. Bullets and table rows are single lines too, however long.
+- **Never reflow a file just to change its wrap style.** If existing prose is already hard-wrapped, leave it — rewrapping the whole file to satisfy this rule is exactly the diff noise the rule exists to avoid. Write new and edited paragraphs unwrapped; let the file converge as it is edited.
+- Never touch fenced code blocks or URLs.
 
-Any documentation line stating a count *about the codebase* (most commonly a test
-count — "423 tests", "N tests passing") must be re-derived, not carried forward:
-
-- Run the project's count command and read the result. Python: `pytest --collect-only -q`
-  (use the trailing summary line for the collected count). Adapt per project type.
-- Rewrite any stale number in `CLAUDE.md`, `README.md`, and other docs to the derived
-  value.
-- Scope: counts that are cheap to re-derive and drift silently (test counts). Not an
-  open-ended audit of every number in the docs.
-
-### 4c — Local-path reconcile (link to GitHub, don't hard-code local paths)
-
-Docs must not reference source files by absolute local filesystem path — those are
-meaningless off the author's machine and break the moment a directory moves. Scan the
-whole doc set and convert such references to stable forms.
-
-1. **Scan** every doc file (`CLAUDE.md`, `README*`, `docs/**`) for absolute local
-   paths: grep for `/home/`, `/Users/`, `/mnt/`, `/opt/`, leading `~/`, and Windows
-   `C:\`-style paths.
-2. **Classify each hit and rewrite:**
-   - **Inside the current repo** (path under `git rev-parse --show-toplevel`) → replace
-     with the **repo-relative path** (e.g. `src/foo.py`). No URL needed.
-   - **In another repo on disk** → derive the GitHub URL:
-     - repo root: `git -C <dir> rev-parse --show-toplevel`
-     - remote: `git -C <root> remote get-url origin`, normalise both
-       `git@github.com:OWNER/REPO.git` and `https://github.com/OWNER/REPO.git` →
-       `https://github.com/OWNER/REPO` (strip trailing `.git`)
-     - branch: `git -C <root> symbolic-ref --short refs/remotes/origin/HEAD` (strip the
-       `origin/` prefix); fall back to `main`
-     - relative path = the full path minus the repo root
-     - build `https://github.com/OWNER/REPO/blob/<branch>/<relpath>` and swap it in,
-       keeping the surrounding prose intact.
-   - **Not derivable** (target repo absent, or no GitHub remote) → leave the text
-     unchanged and record it for the Step 6 report.
-3. **Scope — stay conservative:** only rewrite prose references to source files. Paths
-   inside fenced code blocks or example commands meant to be run locally are not doc
-   references — skip those.
-
-## Step 5 — Update todo / work-tracking file (if it exists)
+## Step 6 — Update todo / work-tracking file (if it exists)
 
 - **Mark completed items** — anything finished in recent commits (check git log from Step 1)
 - **Add new items** — known remaining work, bugs, or inline TODOs found in code
@@ -181,35 +141,34 @@ If a `CHANGELOG.md` was found in Step 1, update it separately — it is release 
 - Follow the existing format exactly (e.g. Keep a Changelog, date-prefixed, etc.)
 - Do not add entries for chore/refactor commits unless the project's changelog convention includes them
 
-## Step 6 — Report
+## Step 7 — Report
 
 Briefly summarise what was changed in each file and why. Note anything skipped and why (e.g. "No README found").
+- **CLAUDE.md gate:** state the line count before and after, and whether it passed or forced a split. Always state the number — "looked fine" is not a report.
+- **Sections moved:** each section moved out of CLAUDE.md, with its `docs/` destination.
+- **Duplication resolved:** each overlap found, which file kept ownership, which lost the copy.
 - Env-example reconcile: list env keys added/flagged and the example file touched, or why skipped (e.g. "no example env file found").
 - Numeric-claim re-derivation: list any numeric claims corrected (old → new), or why skipped (e.g. "no numeric claims in docs").
 - Local-path reconcile: list paths converted to GitHub URLs (old → new), and any local paths flagged but left as-is because the target repo/remote could not be resolved.
 
 ## Common Mistakes
 
-**Don't stop at CLAUDE.md and README.md.** If a `docs/` directory exists, it must be checked — updating those two files is not sufficient. Deployment guides, runbooks, and architecture docs drift just as fast and are often more operationally critical.
+**The 250-line gate is measured, not estimated.** Run `wc -l CLAUDE.md`. Reading the file and judging it "about right" is how a 900-line CLAUDE.md sails through a clean report. If the number is 250 or over, splitting is mandatory — not a suggestion to weigh.
+
+**Never resolve duplication by copying.** One owner, pointers everywhere else. Editing both copies so they agree leaves the defect in place — the second copy *is* the defect.
+
+**README is for humans.** Skill invocations, agent workflow mandates, and internal conventions belong in CLAUDE.md or `docs/`, however accurate they are.
+
+**Don't hard-wrap Markdown, and don't rewrap what's already there.** New prose goes on one line per paragraph; existing wrapped prose is left alone until it is edited anyway. Reflowing a file for style is a diff-noise change with no reader benefit.
+
+**`docs/` matters too — CLAUDE.md and README.md are not the whole job.** If a `docs/` directory exists, it must be checked. Deployment guides, runbooks, and architecture docs drift just as fast and are often more operationally critical.
 
 **Don't skip `docs/` because nothing looks obviously stale.** Check it against the git log — env var additions, config changes, and new deployment steps are easy to miss without an explicit cross-reference.
 
-**Deployment docs always live in `docs/deployment.md`.** Never at the root. If a repo has Docker, it must have `docs/deployment.md` — this is not optional.
+**Deployment docs always live in `docs/deployment.md`, never at the root — and if a Dockerfile exists, that file must exist.** Create it if missing; Docker presence is a deployment signal and the guide is not optional.
 
 **CI/CD changes almost always mean deployment docs are stale.** If `.github/workflows/`, `Dockerfile`, `docker-compose.yml`, or similar files changed in recent commits, treat that as a mandatory trigger to review deployment docs — even if the change looks minor (e.g. adding a new runner or changing a build flag).
 
-**If a Dockerfile exists, `docs/deployment.md` must exist.** Any repo with Docker containers must have `docs/deployment.md`. If missing, create it. Docker presence is a deployment signal — the guide is not optional.
+**`.env.example` reconcile is whole-codebase, not diff-local**, and **never write real secret values into it** — keys and placeholders only, even if a real value is visible in the environment.
 
-**`.env.example` reconcile is whole-codebase, not diff-local.** Adding only the current
-change's new keys is the exact drift this step exists to prevent — enumerate every env
-var the code reads across the whole tree and reconcile the full set.
-
-**Never write real secret values into an example env file.** Keys and placeholders
-only, even if a real value is visible in the environment.
-
-**Don't hard-code local filesystem paths in docs.** A path like
-`/home/user/git/other-repo/src/x.py` is meaningless off the author's machine and breaks
-when anything moves. Reference same-repo files by repo-relative path, and files in other
-repos by GitHub URL (`https://github.com/OWNER/REPO/blob/<branch>/<path>`). If the URL
-can't be derived, flag it in the report rather than leaving a broken local path silently
-in place.
+**Don't hard-code local filesystem paths in docs.** A path like `/home/user/git/other-repo/src/x.py` is meaningless off the author's machine and breaks when anything moves. Reference same-repo files by repo-relative path, and files in other repos by GitHub URL. If the URL can't be derived, flag it in the report rather than leaving a broken local path silently in place.
