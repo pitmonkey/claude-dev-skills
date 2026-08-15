@@ -1,9 +1,10 @@
 ---
 name: create-work-issue
-description: Use when the user wants to create a GitHub issue structured as a work order for autonomous pickup by the github-dispatcher issue-worker (they add the claude/pickup label later), including screening work that needs human intervention and flagging it non-autonomous. Triggered by /create-work-issue, optionally followed by owner/repo and a free-text description of the work. For a bug report from the current conversation, use create-github-bug-issue instead.
+description: Use when the user wants to create a GitHub issue structured as a work order for autonomous pickup by the github-dispatcher issue-worker (they add the claude/pickup label later), including screening work that needs human intervention and flagging it non-autonomous. Also use when asked to rewrite, restructure, or review an existing issue against the work-order template. Triggered by /create-work-issue, optionally followed by owner/repo and a free-text description of the work. For a bug report from the current conversation, use create-github-bug-issue instead.
 allowed-tools:
   - Bash
   - mcp__github__issue_write
+  - mcp__github__issue_read
   - mcp__github__get_label
 ---
 
@@ -18,16 +19,67 @@ resolves every gap it hits by making a documented assumption and proceeding.
 So **the issue body is the entire spec.** A vague body yields a PR full of guesses; a
 well-structured one yields a tight, testable PR. This skill produces the structure.
 
-This skill **creates** the issue and stamps it with the marker label **`claude-drafted`** so
-every skill-created issue stays findable for later triage — but it **never applies
-`claude/pickup`**. Arming an issue for the autonomous worker (adding `claude/pickup`) stays a
-deliberate human step, the last gate before a bot writes a PR: list the candidates with
+This skill **creates** the issue and stamps it with the marker label **`claude-drafted`**, so every
+skill-created issue stays findable for later triage: list the candidates with
 `gh issue list --label claude-drafted`, then arm the ones you pick.
 
 The skill also screens for the opposite case: work the headless agent **cannot** do at all, because
 it needs a secret, an infrastructure change, a pipeline change, generated artwork, or some other
 human act. That work gets stamped **`non-autonomous`** — the inverse of arming — and says so at the
 top of its own body, so nobody wastes a worker run on it.
+
+## Labels
+
+Two separate decisions. Do not conflate them.
+
+| Label | Rule |
+|---|---|
+| `claude-drafted` | **ALWAYS.** Every issue this skill creates or rewrites, no exceptions. |
+| `non-autonomous` | Only when the non-autonomous screen fires. |
+| `claude/pickup` | **NEVER.** Arming for the autonomous worker is the human's step — the last gate before a bot writes a PR. |
+
+The prohibition is scoped to `claude/pickup` alone. It is **not** a ban on labelling. Creating an
+issue without `claude-drafted` is a skill failure — the marker is the only way a human later finds
+skill-created issues to triage.
+
+### If you are about to skip the marker
+
+| Thought | Reality |
+|---|---|
+| "The skill says never apply labels" | It says never apply `claude/pickup`. `claude-drafted` is mandatory. |
+| "This issue is `non-autonomous`, so no marker" | `non-autonomous` issues get `claude-drafted` too. |
+| "The user didn't ask for a label" | The marker is not a user preference; it is how the issue stays findable. |
+| "The label doesn't exist in the repo yet" | Create it (local `gh`) or let GitHub auto-create it (remote MCP). Do not drop it. |
+| "I'm only rewriting/reviewing an existing issue" | Rewriting applies the marker too. See **Rewrite / review an existing issue**. |
+
+## Rewrite / review an existing issue
+
+"Rewrite issue N with this skill", "review issue N", "fix up this issue", or a pasted issue URL
+means: **apply this skill to that issue and write the result back.** It is not a read-only
+opinion. Review and rewrite are the same path — reviewing produces the corrected issue.
+
+1. Read the issue (`gh issue view N --repo <owner/repo> --json title,body,labels`, or
+   `mcp__github__issue_read` remotely).
+2. Re-draft the title and body to the full template — every section present, empty ones `N/A`.
+   Keep the author's facts; do not invent. Genuine gaps are asked about (thin path) or recorded
+   under **Known ambiguities**.
+3. Run the non-autonomous screen against the work as re-drafted, exactly as for a new issue.
+4. Compute the full intended label set — **including `claude-drafted`**, plus `non-autonomous` if
+   the screen fires, plus any pre-existing labels the human already put there. Never
+   `claude/pickup`, and never strip a label a human added.
+5. Show the re-drafted issue and go through the same confirmation loop (Step 3 / Step 4), with
+   **update** in place of create.
+6. Write it back and verify:
+   - **local:** `gh issue edit N --repo <owner/repo> --title "<title>" --body "<body>" --add-label claude-drafted`
+     (add `--add-label non-autonomous` when flagged). Use `--add-label`, never `--remove-label` on
+     a label you did not add.
+   - **remote:** `mcp__github__issue_write` with `method: update`, the issue number, and the full
+     label set.
+
+   Then run the same read-back verification as Step 8.
+
+An issue already carrying `claude/pickup` is **armed**. Say so before rewriting, and ask whether to
+proceed — the human's gate has already been passed and the worker may pick it up mid-edit.
 
 ## The work-order template
 
@@ -227,6 +279,8 @@ Before creating, verify:
    non-empty and names concrete human actions ("add `STRIPE_WEBHOOK_SECRET` to repo secrets"), not
    trigger categories ("needs secrets"). If it is thin, interview the blockers and re-show
    (Step 3).
+3. The label set you are about to pass contains `claude-drafted`. If it does not, add it. Do not
+   create the issue without it.
 
 ### Step 6 — Ensure the label set exists
 
@@ -340,9 +394,27 @@ required` block are omitted entirely on an unflagged issue.
 **Apply `claude-drafted` (plus `non-autonomous` when flagged) — never `claude/pickup`.** The marker
 keeps the issue findable; arming stays the human's step.
 
-### Step 8 — Report
+### Step 8 — Verify labels, then report
 
-Print the created issue's URL, then the appropriate reminder:
+**First, read the labels back.** A silently dropped marker is invisible otherwise.
+
+- **local (gh):**
+
+  ```bash
+  gh issue view <number> --repo <owner/repo> --json labels --jq '.labels[].name' \
+    | grep -qx claude-drafted \
+    || gh issue edit <number> --repo <owner/repo> --add-label claude-drafted
+  ```
+
+- **remote (MCP):** the `issue_write` response carries the applied labels. If `claude-drafted` is
+  absent, call `mcp__github__issue_write` with `method: update`, the issue number, and the full
+  intended `labels` array.
+
+If the re-apply also fails, quote the exact error and say the issue was created **without** the
+marker so the user can fix it by hand. Do not claim success.
+
+**Then report.** Print the created issue's URL, the labels actually present (e.g.
+`Stamped: claude-drafted, non-autonomous`), then the appropriate reminder:
 
 - **remote (MCP):** take the URL from the `issue_write` response (its `html_url` / `url` field).
 - **local (gh):** take the URL returned by `gh issue create`.
@@ -361,9 +433,12 @@ If issue creation fails: quote the exact error and stop.
 
 ## Rules
 
+- ALWAYS apply `claude-drafted` to every issue this skill creates or rewrites — flagged or not.
+  See **Labels**. It is a marker, not an arming label; it triggers nothing.
 - NEVER apply `claude/pickup`. Arming for autonomous pickup is the human's deliberate step;
   creating an armed issue would skip the last review gate before a bot opens a PR. This holds for
-  `non-autonomous` issues too — they are not armed and not "armed but warned".
+  `non-autonomous` issues too — they are not armed and not "armed but warned". This prohibition
+  covers `claude/pickup` only — it never licenses dropping `claude-drafted`.
 - ALWAYS screen the work against the non-autonomous trigger checklist before finalizing. Catching it
   at creation is the whole point; a label added days later has already cost a wasted worker run.
 - NEVER apply `non-autonomous` without a non-empty `## Human intervention required` naming concrete
@@ -371,8 +446,7 @@ If issue creation fails: quote the exact error and stop.
 - The banner text is verbatim and is the FIRST content in the body, above `## Problem / Context`.
 - The banner and `## Human intervention required` are conditional — omitted entirely when the issue
   is not flagged. Never render them as `N/A`.
-- ALWAYS apply the `claude-drafted` marker to every issue so skill-created issues stay findable
-  for triage. This marker is not `claude/pickup` and does not arm anything.
+- ALWAYS verify the marker landed after creating (Step 8) and re-apply it if it did not.
 - NEVER create an issue without showing the draft first.
 - NEVER finalize without real acceptance criteria — they are the spec the agent tests against.
 - NEVER add a "Generated with Claude Code" footer, "🤖" marker, or `Co-Authored-By: Claude` trailer to the issue body — no AI attribution.
