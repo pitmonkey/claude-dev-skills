@@ -1,9 +1,10 @@
 ---
 name: create-github-bug-issue
-description: Use when the user wants to capture a bug or problem from the current conversation as a GitHub bug-report issue, including screening whether the fix needs human intervention and flagging it non-autonomous. Triggered by /create-github-bug-issue, optionally followed by owner/repo. For a work order for the autonomous issue-worker, use create-work-issue instead.
+description: Use when the user wants to capture a bug or problem from the current conversation as a GitHub bug-report issue, including screening whether the fix needs human intervention and flagging it non-autonomous. Also use when asked to rewrite, restructure, or review an existing bug issue against this template. Triggered by /create-github-bug-issue, optionally followed by owner/repo. For a work order for the autonomous issue-worker, use create-work-issue instead.
 allowed-tools:
   - Bash
   - mcp__github__issue_write
+  - mcp__github__issue_read
   - mcp__github__get_label
 ---
 
@@ -15,6 +16,59 @@ GitHub issue. Always shows a draft for review before creating.
 A human may later arm the issue for the autonomous github-dispatcher issue-worker by adding
 `claude/pickup`. So this skill also screens for the opposite case: a fix the headless agent
 **cannot** perform, which gets stamped **`non-autonomous`** and says so at the top of its own body.
+
+## Labels
+
+Separate decisions. Do not conflate them.
+
+| Label | Rule |
+|---|---|
+| `claude-drafted` | **ALWAYS.** Every issue this skill creates or rewrites, no exceptions. |
+| content label | One of `bug` / `enhancement` / `question` / `documentation`, chosen from the issue content. The user may skip it — `claude-drafted` may not be skipped. |
+| `non-autonomous` | Only when the non-autonomous screen fires. |
+| `claude/pickup` | **NEVER.** Arming for the autonomous worker is the human's step. |
+
+The prohibition is scoped to `claude/pickup` alone. It is **not** a ban on labelling. Creating an
+issue without `claude-drafted` is a skill failure — the marker is the only way a human later finds
+skill-created issues to triage.
+
+### If you are about to skip the marker
+
+| Thought | Reality |
+|---|---|
+| "The skill says never apply labels" | It says never apply `claude/pickup`. `claude-drafted` is mandatory. |
+| "The user chose to skip labels" | They skipped the *content* label. `claude-drafted` still applies. |
+| "This issue is `non-autonomous`, so no marker" | `non-autonomous` issues get `claude-drafted` too. |
+| "The label doesn't exist in the repo yet" | Create it (local `gh`) or let GitHub auto-create it (remote MCP). Do not drop it. |
+| "I'm only rewriting/reviewing an existing issue" | Rewriting applies the marker too. See **Rewrite / review an existing issue**. |
+
+## Rewrite / review an existing issue
+
+"Rewrite issue N with this skill", "review issue N", "fix up this issue", or a pasted issue URL
+means: **apply this skill to that issue and write the result back.** It is not a read-only
+opinion. Review and rewrite are the same path — reviewing produces the corrected issue.
+
+1. Read the issue (`gh issue view N --repo <owner/repo> --json title,body,labels`, or
+   `mcp__github__issue_read` remotely).
+2. Re-draft the title and body to the Step 2 template. Keep the author's facts; do not invent. If
+   no suggested fix emerged, omit that section rather than inventing one.
+3. Run the implied fix against the non-autonomous trigger checklist, exactly as for a new issue.
+4. Compute the full intended label set — **including `claude-drafted`**, plus the content label,
+   plus `non-autonomous` if the screen fires, plus any pre-existing labels the human already put
+   there. Never `claude/pickup`, and never strip a label a human added.
+5. Show the re-drafted issue and go through the same confirmation loop (Step 3 / Step 4), with
+   **update** in place of create.
+6. Write it back and verify:
+   - **local:** `gh issue edit N --repo <owner/repo> --title "<title>" --body "<body>" --add-label claude-drafted`
+     (add `--add-label` for each other label in the set). Use `--add-label`, never `--remove-label`
+     on a label you did not add.
+   - **remote:** `mcp__github__issue_write` with `method: update`, the issue number, and the full
+     label set.
+
+   Then run the same read-back verification as Step 7.
+
+An issue already carrying `claude/pickup` is **armed**. Say so before rewriting, and ask whether to
+proceed — the human's gate has already been passed and the worker may pick it up mid-edit.
 
 ## The non-autonomous flag
 
@@ -265,6 +319,11 @@ gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx non-aut
 
 Never recolor or re-describe a label that already exists — take it as it is.
 
+#### Gate — before you create
+
+The label set you are about to pass contains `claude-drafted`. If it does not, add it. Do not
+create the issue without it. Skipping the content label does not skip the marker.
+
 ### Step 6 — Create issue
 
 - **remote (MCP):** call `mcp__github__issue_write` with:
@@ -354,9 +413,27 @@ Omit the content `--label "<label>"` (or leave it out of the MCP `labels` set) i
 chose to skip labels, but **always keep `claude-drafted`**.
 Omit the `## ⚠️ Suggested Fix` section entirely if no fix was identified.
 
-### Step 7 — Report
+### Step 7 — Verify labels, then report
 
-Print the created issue's URL, then note the markers:
+**First, read the labels back.** A silently dropped marker is invisible otherwise.
+
+- **local (gh):**
+
+  ```bash
+  gh issue view <number> --repo <owner/repo> --json labels --jq '.labels[].name' \
+    | grep -qx claude-drafted \
+    || gh issue edit <number> --repo <owner/repo> --add-label claude-drafted
+  ```
+
+- **remote (MCP):** the `issue_write` response carries the applied labels. If `claude-drafted` is
+  absent, call `mcp__github__issue_write` with `method: update`, the issue number, and the full
+  intended `labels` array.
+
+If the re-apply also fails, quote the exact error and say the issue was created **without** the
+marker so the user can fix it by hand. Do not claim success.
+
+**Then report.** Print the created issue's URL, the labels actually present (e.g.
+`Stamped: bug, claude-drafted`), then note the markers:
 
 - **remote (MCP):** take the URL from the `issue_write` response (its `html_url` / `url` field).
 - **local (gh):** take the URL returned by `gh issue create`.
@@ -375,12 +452,14 @@ If issue creation fails: quote the exact error and stop.
 
 ## Rules
 
+- ALWAYS apply `claude-drafted` to every issue this skill creates or rewrites — flagged or not,
+  content label or not. See **Labels**. It is a marker, not an arming label; it triggers nothing
+- NEVER apply `claude/pickup`. Arming for autonomous pickup is the human's deliberate step — and it
+  is never right on a `non-autonomous` issue. This prohibition covers `claude/pickup` only — it
+  never licenses dropping `claude-drafted`
+- ALWAYS verify the marker landed after creating (Step 7) and re-apply it if it did not
 - NEVER create an issue without showing the draft first
 - NEVER skip the label check
-- ALWAYS apply the `claude-drafted` marker label, even when the content label is skipped, so
-  skill-created issues stay findable for triage
-- NEVER apply `claude/pickup`. Arming for autonomous pickup is the human's deliberate step — and it
-  is never right on a `non-autonomous` issue
 - ALWAYS screen the implied fix against the non-autonomous trigger checklist before finalizing.
   Catching it at creation is the whole point; a label added days later has already cost a wasted
   worker run
