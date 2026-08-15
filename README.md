@@ -15,7 +15,7 @@ Personal Claude Code skills plugin for dev workflows.
 | `pr` | Push branch and open a pull request (GitHub) or merge request (GitLab) — forge auto-detected |
 | `python-init` | Set up uv, pytest, ruff, mypy, pre-commit, CI for a Python project |
 | `sc` | Stage and commit current changes, keeping docs updated |
-| `update-docs` | Keep project documentation in sync with code changes |
+| `update-docs` | Keep project documentation in sync with code changes — enforces a measured 250-line cap on `CLAUDE.md` (splitting the overflow into `docs/`) and one owning file per topic across `README.md`, `CLAUDE.md` and `docs/` |
 
 ### Issue labels
 
