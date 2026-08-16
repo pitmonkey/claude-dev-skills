@@ -19,14 +19,15 @@ Personal Claude Code skills plugin for dev workflows.
 
 ### Issue labels
 
-The two issue-creation skills apply markers; arming an issue for the autonomous worker stays a
-human step.
+The two issue-creation skills apply a mandatory marker plus two independent flags; arming an issue
+for the autonomous worker stays a human step.
 
 | Label | Applied by | Meaning |
 |-------|-----------|---------|
 | `claude-drafted` | skill, always | Drafted by an issue-creation skill; awaiting human triage. Find them with `gh issue list --label claude-drafted`. Applied on every create **and** every rewrite, then read back and re-applied if it did not land |
 | `non-autonomous` | skill, when a trigger fires | The work needs a human — secrets, infra, pipelines, generated assets, third-party dashboards, aesthetic judgement. The issue body leads with a banner and a `## Human intervention required` list |
-| `claude/pickup` | **human only** | Arms the issue for the github-dispatcher issue-worker (plan → test-first → PR). The skills never apply it, and never on a `non-autonomous` issue |
+| `requires-review` | skill, when a trigger fires | The draft needs a human read before it is armed — written against an unlanded dependency, resting on inferred facts, carrying a judgement call, or one of a batch whose later items depend on earlier ones. The issue body leads with a banner naming the reason |
+| `claude/pickup` | **human only** | Arms the issue for the github-dispatcher issue-worker (plan → test-first → PR). The skills never apply it, never on a `non-autonomous` issue, and not on a `requires-review` issue until a human has reviewed it |
 
 ## Requirements
 

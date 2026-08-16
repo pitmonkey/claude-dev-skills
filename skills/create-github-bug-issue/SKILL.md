@@ -1,6 +1,6 @@
 ---
 name: create-github-bug-issue
-description: Use when the user wants to capture a bug or problem from the current conversation as a GitHub bug-report issue, including screening whether the fix needs human intervention and flagging it non-autonomous. Also use when asked to rewrite, restructure, or review an existing bug issue against this template. Triggered by /create-github-bug-issue, optionally followed by owner/repo. For a work order for the autonomous issue-worker, use create-work-issue instead.
+description: Use when the user wants to capture a bug or problem from the current conversation as a GitHub bug-report issue, including screening whether the fix needs human intervention and flagging it non-autonomous, and screening the draft itself and flagging it requires-review when a human should read it before arming it. Also use when asked to rewrite, restructure, or review an existing bug issue against this template. Triggered by /create-github-bug-issue, optionally followed by owner/repo. For a work order for the autonomous issue-worker, use create-work-issue instead.
 allowed-tools:
   - Bash
   - mcp__github__issue_write
@@ -17,15 +17,21 @@ A human may later arm the issue for the autonomous github-dispatcher issue-worke
 `claude/pickup`. So this skill also screens for the opposite case: a fix the headless agent
 **cannot** perform, which gets stamped **`non-autonomous`** and says so at the top of its own body.
 
+It also screens the **draft itself**: a report whose repro, cause, or suggested fix rests on facts
+inferred from the conversation rather than read from the repo, or that depends on a change not yet
+landed, gets stamped **`requires-review`** so a human checks it before `claude/pickup`.
+
 ## Labels
 
-Separate decisions. Do not conflate them.
+One mandatory marker, one content label, two independent flags, one prohibition. Do not conflate
+them.
 
 | Label | Rule |
 |---|---|
 | `claude-drafted` | **ALWAYS.** Every issue this skill creates or rewrites, no exceptions. |
 | content label | One of `bug` / `enhancement` / `question` / `documentation`, chosen from the issue content. The user may skip it — `claude-drafted` may not be skipped. |
 | `non-autonomous` | Only when the non-autonomous screen fires. |
+| `requires-review` | Only when the review screen fires. Independent of `non-autonomous`, and not a content label. |
 | `claude/pickup` | **NEVER.** Arming for the autonomous worker is the human's step. |
 
 The prohibition is scoped to `claude/pickup` alone. It is **not** a ban on labelling. Creating an
@@ -37,10 +43,11 @@ skill-created issues to triage.
 | Thought | Reality |
 |---|---|
 | "The skill says never apply labels" | It says never apply `claude/pickup`. `claude-drafted` is mandatory. |
-| "The user chose to skip labels" | They skipped the *content* label. `claude-drafted` still applies. |
+| "The user chose to skip labels" | They skipped the *content* label. `claude-drafted` is mandatory, and the flag labels are not content labels — skipping labels never drops them. |
 | "This issue is `non-autonomous`, so no marker" | `non-autonomous` issues get `claude-drafted` too. |
 | "The label doesn't exist in the repo yet" | Create it (local `gh`) or let GitHub auto-create it (remote MCP). Do not drop it. |
 | "I'm only rewriting/reviewing an existing issue" | Rewriting applies the marker too. See **Rewrite / review an existing issue**. |
+| "That's a lot of labels — I'll pick the important one" | `claude-drafted` is mandatory, the content label is the user's choice, and the two flags are independent conditions. Applying fewer is not simplification. |
 
 ## Rewrite / review an existing issue
 
@@ -52,10 +59,13 @@ opinion. Review and rewrite are the same path — reviewing produces the correct
    `mcp__github__issue_read` remotely).
 2. Re-draft the title and body to the Step 2 template. Keep the author's facts; do not invent. If
    no suggested fix emerged, omit that section rather than inventing one.
-3. Run the implied fix against the non-autonomous trigger checklist, exactly as for a new issue.
+3. Run the implied fix against the non-autonomous trigger checklist and the draft against the
+   requires-review checklist, exactly as for a new issue. A rewrite is a new draft: re-screen it,
+   do not inherit the old verdict.
 4. Compute the full intended label set — **including `claude-drafted`**, plus the content label,
-   plus `non-autonomous` if the screen fires, plus any pre-existing labels the human already put
-   there. Never `claude/pickup`, and never strip a label a human added.
+   plus `non-autonomous` if that screen fires, plus `requires-review` if the review screen fires,
+   plus any pre-existing labels the human already put there. Never `claude/pickup`, and never strip
+   a label a human added.
 5. Show the re-drafted issue and go through the same confirmation loop (Step 3 / Step 4), with
    **update** in place of create.
 6. Write it back and verify:
@@ -66,6 +76,12 @@ opinion. Review and rewrite are the same path — reviewing produces the correct
      label set.
 
    Then run the same read-back verification as Step 7.
+
+   The `--add-label`-only rule protects labels a human added. If the user explicitly toggles a flag
+   **off** during the confirmation loop on an issue that already carries it, that is an instruction,
+   not an inference: `gh issue edit N --repo <owner/repo> --remove-label requires-review` is allowed
+   **there and only there**. Never remove a flag on your own judgement that the draft now looks
+   fine.
 
 An issue already carrying `claude/pickup` is **armed**. Say so before rewriting, and ask whether to
 proceed — the human's gate has already been passed and the worker may pick it up mid-edit.
@@ -110,6 +126,54 @@ a restatement of the trigger category:
 ```
 
 Both are **conditional**: omitted entirely when the issue is not flagged. Never rendered as `N/A`.
+
+## The requires-review flag
+
+`non-autonomous` is about the fix: a bot **cannot** do it. `requires-review` is about the draft: a
+bot **could** do it, but the report rests on something a human should check first. The two are
+independent conditions — an issue can carry both, either, or neither.
+
+### Trigger checklist
+
+Flag the issue **`requires-review`** if any of these is true of the draft:
+
+- the report or fix depends on a change that is **not merged or not verified** — an open PR, an
+  unlanded issue, a branch you did not read; its factual claims may not survive that landing
+- it contains a **risk, trade-off, or balance judgement** the author should confirm before a bot
+  acts on it
+- it is one of a **batch**, and how the earlier items land changes whether the later ones are still
+  right
+- a **load-bearing fact was inferred rather than read** from the repo — the repro steps, the actual
+  behaviour, the file the bug is in — and you could not verify it
+
+A trigger fires on the **confidence of the draft**, not the difficulty of the fix.
+
+The `## ⚠️ Suggested Fix (Unverified Hypothesis)` section is **not** on its own a `requires-review`
+trigger — it carries its own disclaimer, and it is unverified by design on every issue this skill
+creates. A trigger fires when the **problem statement** rests on inferred facts, or when the fix
+turns on a judgement call the author should confirm — not merely because a fix was suggested.
+
+### Banner
+
+When flagged, this goes in the body verbatim, with the reason filled in. It is the **first content
+in the body**, above `## Description` — below the `non-autonomous` banner if that one is present
+too:
+
+```
+> 🔎 **`requires-review`** — a human must review this draft before arming it.
+> Do **not** add `claude/pickup` until reviewed. Why: <one line — the unverified dependency, the
+> judgement call, the batch ordering, or the inferred fact>.
+```
+
+The banner and the label are **one unit**. Never write the banner without adding `requires-review`
+to the label set, and never add the label without the banner. Never emit the banner with the `Why:`
+left generic — name the actual dependency, judgement, or inferred fact.
+
+There is no separate body section: unlike `non-autonomous`, which lists actions a human must
+perform, `requires-review` states one reason, and the reason lives in the banner.
+
+**When both flags fire**, the `non-autonomous` banner comes first, then the `requires-review`
+banner, then `## Human intervention required`, then `## Description` and the rest.
 
 ## Process
 
@@ -172,12 +236,17 @@ Title: <concise imperative, e.g. "Fix: token expiry check uses < instead of <=">
 
 Labels: <one of: bug | enhancement | question | documentation — chosen based on issue content>
         <plus non-autonomous if the fix trips a trigger>
+        <plus requires-review if the draft trips a review trigger>
 
 ---
 
 > ⚠️ **`non-autonomous`** — requires human intervention; not for autonomous pickup.
 > Do **not** add `claude/pickup`. See **Human intervention required** below.
-<omit these two lines entirely unless flagged>
+<omit these two lines entirely unless flagged non-autonomous>
+
+> 🔎 **`requires-review`** — a human must review this draft before arming it.
+> Do **not** add `claude/pickup` until reviewed. Why: <the unverified dependency, judgement, or inferred fact>.
+<omit these two lines entirely unless flagged requires-review>
 
 ## Human intervention required
 <one concrete bullet per blocker — omit this whole section unless flagged>
@@ -205,38 +274,48 @@ Labels: <one of: bug | enhancement | question | documentation — chosen based o
 <repo, branch, language versions, or other relevant context from the conversation>
 ```
 
-Then run the fix against the trigger checklist and, if anything fires, add the banner, the
-`## Human intervention required` section, and `non-autonomous` to the label set. If you cannot tell
-whether a trigger applies, ask rather than assume.
+Then run the fix against the non-autonomous trigger checklist and the draft against the
+requires-review checklist. For each that fires, add its banner and its label to the set (and
+`## Human intervention required` for non-autonomous). If you cannot tell whether a trigger applies,
+ask rather than assume.
 
 ### Step 3 — Show draft
 
-Display the full draft to the user. Then ask:
+Display the full draft to the user. Above it, print the flag status and, for each flag that is on,
+the triggers that fired:
 
-- **flagged:** state the flag and the triggers that fired above the draft, then ask:
+```
+Flags: `non-autonomous` — <ON: triggers that fired | off>
+       `requires-review` — <ON: the reason | off>
+```
 
-  > **Create this issue, edit it, remove the non-autonomous flag, or cancel?
-  > (create / edit / unflag / cancel)**
+Then ask, in every state, verbatim:
 
-- **not flagged:**
+> **Create this issue, edit it, or toggle a flag?
+> (create / edit / non-autonomous / requires-review / cancel)**
 
-  > **Create this issue, edit it, mark it non-autonomous, or cancel?
-  > (create / edit / flag / cancel)**
+Naming a flag toggles it: on if it is off, off if it is on.
 
 ### Step 4 — Confirmation loop
 
 - **create** → proceed to Step 5
 - **edit** → user describes the change in plain text; rewrite the relevant section(s) and return to Step 3
-- **flag** → add the banner and `## Human intervention required`, and add `non-autonomous` to the
-  label set. If you do not already know what the human must do, ask before re-showing. Return to Step 3
-- **unflag** → remove the banner, the `## Human intervention required` section, and
-  `non-autonomous` from the label set. Return to Step 3
+- **non-autonomous** → toggle the flag. Turning it **on** adds the banner, `## Human intervention
+  required`, and `non-autonomous` to the label set; if you do not already know what the human must
+  do, ask before re-showing. Turning it **off** removes all three. Return to Step 3
+- **requires-review** → toggle the flag. Turning it **on** adds the banner (with a concrete `Why:` —
+  ask if you do not have one) and `requires-review` to the label set. Turning it **off** removes
+  both. Return to Step 3
 - **cancel** → stop immediately; do not create anything
+
+The user overrides the screen in either direction: they may turn a flag on that did not fire, or off
+that did. Never toggle a flag they did not ask you to. If they just say `flag` or `unflag`, ask which
+flag they mean — do not assume `non-autonomous`.
 
 ### Step 5 — Check labels
 
 Decide the final label set: the chosen content label, plus the `claude-drafted` marker, plus
-`non-autonomous` when the issue is flagged.
+`non-autonomous` and/or `requires-review` for each flag that is on.
 
 #### remote (MCP)
 
@@ -251,12 +330,13 @@ cosmetic).
     > Label `<label>` doesn't exist in this repo. Create it (it'll be added when the issue is
     > created), skip labels, or name an existing label to use instead?
     - create → keep `<label>` in the set (auto-created at issue time).
-    - skip → drop the content label; keep only `claude-drafted`.
+    - skip → drop the content label; keep `claude-drafted` and any flag labels. "Skip labels" means
+      the content label only.
     - name one → `get_label` the name they give to confirm it exists, then use it.
 - The `claude-drafted` marker needs no pre-check: include it in the label set and it is
-  auto-created at issue time if missing. Same for `non-autonomous` when flagged — include it and
-  let GitHub create it. Never ask the user to approve these two; they are markers, not content
-  labels.
+  auto-created at issue time if missing. Same for `non-autonomous` and `requires-review` when their
+  flags are on — include them and let GitHub create them. Never ask the user to approve these three;
+  they are markers and flags, not content labels.
 
 (The "seed the four default labels" convenience below is local-only — MCP can't batch-create
 labels. Remotely, just handle the single chosen label as above.)
@@ -282,7 +362,7 @@ Offer to seed a default set before continuing:
   gh label create question    --repo <owner/repo> --color d876e3
   gh label create documentation --repo <owner/repo> --color 0075ca
   ```
-- skip → create issue without any content label
+- skip → create the issue without a content label; the marker and any flag labels still apply
 
 **If the repo has labels but the suggested label is missing:**
 
@@ -292,7 +372,7 @@ Ask:
 > Existing: <comma-separated list>
 
 - create → `gh label create <label> --repo <owner/repo> --color <sensible default>`
-- skip → create issue without a content label
+- skip → create the issue without a content label; the marker and any flag labels still apply
 - choose → user picks from list; use that label
 
 **If the suggested label exists:** proceed directly.
@@ -309,7 +389,7 @@ gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx claude-
 This marker stamps every skill-created issue so you can later find them with
 `gh issue list --label claude-drafted`. It is applied even when the user skips the content label.
 
-**When the issue is flagged**, ensure `non-autonomous` exists too:
+**When flagged `non-autonomous`**, ensure that label exists too:
 
 ```bash
 gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx non-autonomous \
@@ -317,12 +397,24 @@ gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx non-aut
      --description "Needs human intervention — not for autonomous issue-worker pickup"
 ```
 
+**When flagged `requires-review`**, ensure it exists too:
+
+```bash
+gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx requires-review \
+  || gh label create requires-review --repo <owner/repo> --color fbca04 \
+     --description "Draft needs human review before it is armed with claude/pickup"
+```
+
 Never recolor or re-describe a label that already exists — take it as it is.
 
 #### Gate — before you create
 
+If the `requires-review` banner is in the body, `requires-review` is in the label set — and vice
+versa. One without the other is a bug. Its `Why:` names a concrete dependency, judgement, or
+inferred fact.
+
 The label set you are about to pass contains `claude-drafted`. If it does not, add it. Do not
-create the issue without it. Skipping the content label does not skip the marker.
+create the issue without it. Skipping the content label does not skip the marker or the flags.
 
 ### Step 6 — Create issue
 
@@ -331,15 +423,19 @@ create the issue without it. Skipping the content label does not skip the marker
   - `owner` / `repo`: the confirmed target
   - `title`: the drafted title
   - `labels`: the final set — the chosen content label (if kept) plus `"claude-drafted"`, plus
-    `"non-autonomous"` when flagged; omit the content label if the user skipped it, but **always
-    keep `"claude-drafted"`**. Never `"claude/pickup"`
+    `"non-autonomous"` and/or `"requires-review"` for each flag that is on; omit the content label
+    if the user skipped it, but **always keep `"claude-drafted"`** and keep any flag label — a user
+    skipping content labels was never asked about the flags. Never `"claude/pickup"`
   - `body`: the drafted body (omit the `## ⚠️ Suggested Fix` section entirely if no fix was
-    identified — do not invent one; omit the banner and `## Human intervention required` unless
-    flagged):
+    identified — do not invent one; omit each banner, and `## Human intervention required`, when its
+    flag is off):
 
     ```
     > ⚠️ **`non-autonomous`** — requires human intervention; not for autonomous pickup.
     > Do **not** add `claude/pickup`. See **Human intervention required** below.
+
+    > 🔎 **`requires-review`** — a human must review this draft before arming it.
+    > Do **not** add `claude/pickup` until reviewed. Why: <the unverified dependency, judgement, or inferred fact>.
 
     ## Human intervention required
     - <what a human must do>
@@ -379,6 +475,9 @@ create the issue without it. Skipping the content label does not skip the marker
   > ⚠️ **`non-autonomous`** — requires human intervention; not for autonomous pickup.
   > Do **not** add `claude/pickup`. See **Human intervention required** below.
 
+  > 🔎 **`requires-review`** — a human must review this draft before arming it.
+  > Do **not** add `claude/pickup` until reviewed. Why: <the unverified dependency, judgement, or inferred fact>.
+
   ## Human intervention required
   - <what a human must do>
 
@@ -407,10 +506,11 @@ create the issue without it. Skipping the content label does not skip the marker
   )"
   ```
 
-Add `--label "non-autonomous"` when flagged; omit the banner and `## Human intervention required`
-block entirely when not.
+Add `--label "non-autonomous"` and/or `--label "requires-review"` for each flag that is on; omit
+each banner (and the `## Human intervention required` block) when its flag is off.
 Omit the content `--label "<label>"` (or leave it out of the MCP `labels` set) if the user
-chose to skip labels, but **always keep `claude-drafted`**.
+chose to skip labels, but **always keep `claude-drafted`, and keep any flag label** — "skip labels"
+refers to the content label only.
 Omit the `## ⚠️ Suggested Fix` section entirely if no fix was identified.
 
 ### Step 7 — Verify labels, then report
@@ -432,21 +532,45 @@ Omit the `## ⚠️ Suggested Fix` section entirely if no fix was identified.
 If the re-apply also fails, quote the exact error and say the issue was created **without** the
 marker so the user can fix it by hand. Do not claim success.
 
+**Then, when flagged `requires-review`, read that back too** — separately, after the marker check
+above. Do not merge the two into one loop; the marker check is unconditional and stands alone.
+
+- **local (gh):**
+
+  ```bash
+  gh issue view <number> --repo <owner/repo> --json labels --jq '.labels[].name' \
+    | grep -qx requires-review \
+    || gh issue edit <number> --repo <owner/repo> --add-label requires-review
+  ```
+
+- **remote (MCP):** if `requires-review` is absent from the `issue_write` response labels, call
+  `mcp__github__issue_write` with `method: update`, the issue number, and the full intended `labels`
+  array.
+
+A body carrying the `requires-review` banner with no `requires-review` label is the exact failure
+this check exists to catch.
+
 **Then report.** Print the created issue's URL, the labels actually present (e.g.
-`Stamped: bug, claude-drafted`), then note the markers:
+`Stamped: bug, claude-drafted, requires-review`), then the base line, then one addendum per flag
+that is on:
 
 - **remote (MCP):** take the URL from the `issue_write` response (its `html_url` / `url` field).
 - **local (gh):** take the URL returned by `gh issue create`.
 
-**Not flagged:**
+**Always:**
 
 > Stamped `claude-drafted`. List skill-created issues later with
 > `gh issue list --label claude-drafted`.
 
-**Flagged:**
+**Plus, if `non-autonomous`:**
 
-> Stamped `claude-drafted` and `non-autonomous` — this one is **excluded from autonomous pickup**;
-> it needs a human first. Review them with `gh issue list --label non-autonomous`.
+> Also `non-autonomous` — **excluded from autonomous pickup**; it needs a human first. Review them
+> with `gh issue list --label non-autonomous`.
+
+**Plus, if `requires-review`:**
+
+> Also `requires-review` — <the reason>. Read it before you arm it. Review them with
+> `gh issue list --label requires-review`.
 
 If issue creation fails: quote the exact error and stop.
 
@@ -455,8 +579,9 @@ If issue creation fails: quote the exact error and stop.
 - ALWAYS apply `claude-drafted` to every issue this skill creates or rewrites — flagged or not,
   content label or not. See **Labels**. It is a marker, not an arming label; it triggers nothing
 - NEVER apply `claude/pickup`. Arming for autonomous pickup is the human's deliberate step — and it
-  is never right on a `non-autonomous` issue. This prohibition covers `claude/pickup` only — it
-  never licenses dropping `claude-drafted`
+  is never right on a `non-autonomous` issue, nor on a `requires-review` issue until a human has
+  reviewed it. This prohibition covers `claude/pickup` only — it never licenses dropping
+  `claude-drafted`
 - ALWAYS verify the marker landed after creating (Step 7) and re-apply it if it did not
 - NEVER create an issue without showing the draft first
 - NEVER skip the label check
@@ -476,3 +601,13 @@ If issue creation fails: quote the exact error and stop.
   `gh auth login`
 - The suggested fix disclaimer must appear verbatim — do not soften or shorten it
 - If no fix emerged from the conversation, omit the fix section entirely — do not invent one
+- ALWAYS screen the draft against the requires-review trigger checklist too — separately from the
+  non-autonomous screen. They answer different questions: can a bot do this, versus is this draft
+  safe to hand a bot yet
+- The `requires-review` label and its banner are ONE UNIT — never the banner without the label,
+  never the label without the banner. A banner with no label is invisible to `gh issue list`
+- The `requires-review` banner's `Why:` names a concrete dependency, judgement, or inferred fact.
+  "May need review" is not a reason
+- A suggested fix being unverified is not on its own a requires-review trigger — that section is
+  unverified by design and carries its own disclaimer. The flag is about inferred *problem* facts,
+  unlanded dependencies, and judgement calls

@@ -45,29 +45,36 @@ one if already open.
 
 - **Fail-fast**: if the push is rejected or `gh pr create` / `glab mr create` errors, STOP
   here. Report the error. Do NOT arm the merge-watch — there is nothing to watch.
-- Capture **both** the request number/URL and the forge `pr` detected; the loop needs both.
+- Capture **all three**: the request number, the request **URL**, and the forge `pr` detected.
+  The loop needs all of them.
+- **Print the URL immediately**, before arming the watch — do not save it for Step 4.
+- The URL is a required input to Step 3. If it was not captured, re-read it with the pinned
+  command from `pr` Step 5 (`gh pr view --json url --jq '.url'` /
+  `glab mr view --output json | jq -r '.web_url'`) rather than arming a loop that cannot cite it.
 
 ### Step 3 — Arm the merge-watch (invoke `loop`, dynamic)
 
 Hand the watch to the `loop` skill via the Skill tool, self-paced (no interval), passing
-the request number so it polls a concrete target. The watch runs in **two sequential
-phases** — confirm CI is green, then wait for the merge. Use the prompt for the forge `pr`
-detected in Step 2.
+the request number **and its URL** so it polls a concrete target and can cite it on every
+tick. The watch runs in **two sequential phases** — confirm CI is green, then wait for the
+merge. Use the prompt for the forge `pr` detected in Step 2.
 
 **GitHub:**
 
 ```
-Skill({skill: "loop", args: "Watch PR #<N> in two phases.
-Phase 1 (CI): run `gh pr checks <N>`. If it reports no checks exist, skip to Phase 2. If any check has FAILED, output FAILURE with the failing check names and STOP the loop — do not wait to merge. If checks are still pending/running, wait ~2 minutes and poll again. When every check has passed, output SUCCESS and continue to Phase 2.
-Phase 2 (merge): poll PR #<N> every ~5 minutes until it merges; when merged, if the working tree is clean switch to main, git pull, then run `git gone` to delete the now-merged local feature branch, otherwise report the tree is dirty and do NOT switch. Stop the loop once handled."})
+Skill({skill: "loop", args: "Watch PR #<N> (<URL>) in two phases.
+Every tick, output exactly one status line ending with the URL — `<phase>: <state> — <URL>` — including while waiting. Never print a tick without the URL.
+Phase 1 (CI): run `gh pr checks <N>`. If it reports no checks exist, skip to Phase 2. If any check has FAILED, output FAILURE with the failing check names and the URL, and STOP the loop — do not wait to merge. If checks are still pending/running, wait ~2 minutes and poll again. When every check has passed, output SUCCESS with the URL and continue to Phase 2.
+Phase 2 (merge): poll PR #<N> every ~5 minutes until it merges; when merged, if the working tree is clean switch to main, git pull, then run `git gone` to delete the now-merged local feature branch, otherwise report the tree is dirty and do NOT switch. The merged and dirty-tree reports both end with the URL. Stop the loop once handled."})
 ```
 
 **GitLab:**
 
 ```
-Skill({skill: "loop", args: "Watch MR !<N> in two phases. Read state with `glab api \"projects/:fullpath/merge_requests/<N>\"` — non-interactive JSON; never use a live/TUI view inside the loop.
-Phase 1 (CI): read `head_pipeline.status`. If there is no head_pipeline, skip to Phase 2. If it is failed or canceled, output FAILURE with the pipeline URL and STOP the loop — do not wait to merge. If it is running, pending or created, wait ~2 minutes and poll again. When it is success or skipped, output SUCCESS and continue to Phase 2.
-Phase 2 (merge): poll the same endpoint every ~5 minutes until `state` is merged; if `state` becomes closed, output CLOSED and STOP. When merged, if the working tree is clean switch to main, git pull, then run `git gone` to delete the now-merged local feature branch, otherwise report the tree is dirty and do NOT switch. Stop the loop once handled."})
+Skill({skill: "loop", args: "Watch MR !<N> (<URL>) in two phases. Read state with `glab api \"projects/:fullpath/merge_requests/<N>\"` — non-interactive JSON; never use a live/TUI view inside the loop.
+Every tick, output exactly one status line ending with the MR URL — `<phase>: <state> — <URL>` — including while waiting. Never print a tick without the URL.
+Phase 1 (CI): read `head_pipeline.status`. If there is no head_pipeline, skip to Phase 2. If it is failed or canceled, output FAILURE with the pipeline URL and the MR URL — they are different links, print both — and STOP the loop; do not wait to merge. If it is running, pending or created, wait ~2 minutes and poll again. When it is success or skipped, output SUCCESS with the MR URL and continue to Phase 2.
+Phase 2 (merge): poll the same endpoint every ~5 minutes until `state` is merged; if `state` becomes closed, output CLOSED with the MR URL and STOP. When merged, if the working tree is clean switch to main, git pull, then run `git gone` to delete the now-merged local feature branch, otherwise report the tree is dirty and do NOT switch. The merged and dirty-tree reports both end with the MR URL. Stop the loop once handled."})
 ```
 
 - **Phase 1** is the ~2-minute CI gate. A red pipeline stops the loop and never advances
@@ -83,6 +90,8 @@ Phase 2 (merge): poll the same endpoint every ~5 minutes until `state` is merged
   manual `git gone` / `git branch -D`.
 - `glab api` is used rather than `glab ci status` because the latter can open a live view;
   the API read is non-interactive and stable across `glab` versions.
+- **Every tick cites the request URL**, waiting ticks included. The watch can run for hours;
+  without this the link is printed once at the start and then scrolls out of reach.
 
 Dynamic (self-paced) is deliberate over a fixed 5-minute cron: it decides its own cadence
 and self-stops on a CI failure or once the PR merges. The loop is session-only — it dies
@@ -114,6 +123,8 @@ early (cancel the loop / `CronDelete` if one was used).
 - **Push runs without a confirmation prompt** — shipping is the whole point of gitgo. The
   clean-tree stop (Step 1) and push/PR fail-fast (Step 2) are the guards, not a y/n.
 - **Never force-push, never push to `main`/`master`, never auto-switch a dirty tree.**
+- **Every merge-watch tick cites the PR/MR URL** — the link must never be more than one tick
+  away, whatever the loop is waiting on.
 - **No AI attribution** anywhere (commit trailer, PR body) — inherited from `sc`/`pr`.
 - Interruptible: if any invoked skill asks the user something (PR body, etc.) or the user
   bails, honor it and stop — `/gitgo` is a macro, not an unstoppable pipeline. gitgo
