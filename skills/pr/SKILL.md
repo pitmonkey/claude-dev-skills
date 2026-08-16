@@ -91,8 +91,15 @@ Use this to understand: what changed, and why (from commit messages).
 
 ### Step 5 — Create the request
 
-First check one does not already exist for the branch — `gh pr view` / `glab mr view`. If
-one is open, report its URL and skip creation.
+First check one does not already exist for the branch. Pin the read to the URL field so the answer
+is a bare URL, not a page of prose:
+
+```bash
+gh pr view --json url --jq '.url'          # GitHub
+glab mr view --output json | jq -r '.web_url'   # GitLab
+```
+
+If one is open, report its URL and skip creation.
 
 **GitHub:**
 
@@ -139,6 +146,9 @@ Content rules are the same on both forges:
 
 Print the URL returned by `gh pr create` / `glab mr create`. Call it a **PR** on GitHub and
 an **MR** on GitLab.
+
+If that stdout was not captured, re-read the URL with the same pinned commands as Step 5 rather than
+reporting without one — callers such as `gitgo` need the URL as a value, not just on screen.
 
 ## Rules
 
