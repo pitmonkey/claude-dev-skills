@@ -1,6 +1,6 @@
 ---
 name: create-work-issue
-description: Use when the user wants to create a GitHub issue structured as a work order for autonomous pickup by the github-dispatcher issue-worker (they add the claude/pickup label later), including screening work that needs human intervention and flagging it non-autonomous, and screening the draft itself and flagging it requires-review when a human should read it before arming it. Also use when asked to rewrite, restructure, or review an existing issue against the work-order template. Triggered by /create-work-issue, optionally followed by owner/repo and a free-text description of the work. For a bug report from the current conversation, use create-github-bug-issue instead.
+description: Use when the user wants to create a GitHub issue structured as a work order for autonomous pickup by the github-dispatcher issue-worker (they add the claude/pickup label later), including screening work that needs human intervention and flagging it non-autonomous, and screening the draft itself and flagging it requires-review when a human should read it before arming it. Also use when asked to rewrite, restructure, or review an existing issue against the work-order template. Triggered by /create-work-issue, optionally followed by owner/repo and a free-text description of the work. For a bug report from the current conversation, use create-github-bug-issue instead. To sweep issues that already carry requires-review and clear the ones now verifiable, use review-flagged-issues instead.
 allowed-tools:
   - Bash
   - mcp__github__issue_write
@@ -90,7 +90,9 @@ opinion. Review and rewrite are the same path — reviewing produces the correct
    **off** during the confirmation loop on an issue that already carries it, that is an instruction,
    not an inference: `gh issue edit N --repo <owner/repo> --remove-label requires-review` is allowed
    **there and only there**. Never remove a flag on your own judgement that the draft now looks
-   fine.
+   fine. The one sanctioned sweep that clears `requires-review` on evidence rather than on a toggle
+   is the `review-flagged-issues` skill, which re-checks each flagged draft against the current repo
+   and holds anything it cannot verify.
 
    Then run the same read-back verification as Step 8.
 
@@ -584,4 +586,7 @@ If issue creation fails: quote the exact error and stop.
 - The `requires-review` label and its banner are ONE UNIT — never the banner without the label,
   never the label without the banner. A banner with no label is invisible to `gh issue list`.
 - The `requires-review` banner's `Why:` names a concrete dependency, judgement, or inferred fact.
-  "May need review" is not a reason.
+  "May need review" is not a reason. It is also what the later review sweep resolves against, so a
+  generic `Why:` leaves the flag unclearable.
+- NEVER clear `requires-review` from an existing issue in this skill on your own judgement. Clearing
+  it on evidence is the `review-flagged-issues` skill's job; here it takes an explicit user toggle.

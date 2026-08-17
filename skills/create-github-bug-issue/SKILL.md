@@ -1,6 +1,6 @@
 ---
 name: create-github-bug-issue
-description: Use when the user wants to capture a bug or problem from the current conversation as a GitHub bug-report issue, including screening whether the fix needs human intervention and flagging it non-autonomous, and screening the draft itself and flagging it requires-review when a human should read it before arming it. Also use when asked to rewrite, restructure, or review an existing bug issue against this template. Triggered by /create-github-bug-issue, optionally followed by owner/repo. For a work order for the autonomous issue-worker, use create-work-issue instead.
+description: Use when the user wants to capture a bug or problem from the current conversation as a GitHub bug-report issue, including screening whether the fix needs human intervention and flagging it non-autonomous, and screening the draft itself and flagging it requires-review when a human should read it before arming it. Also use when asked to rewrite, restructure, or review an existing bug issue against this template. Triggered by /create-github-bug-issue, optionally followed by owner/repo. For a work order for the autonomous issue-worker, use create-work-issue instead. To sweep issues that already carry requires-review and clear the ones now verifiable, use review-flagged-issues instead.
 allowed-tools:
   - Bash
   - mcp__github__issue_write
@@ -81,7 +81,9 @@ opinion. Review and rewrite are the same path — reviewing produces the correct
    **off** during the confirmation loop on an issue that already carries it, that is an instruction,
    not an inference: `gh issue edit N --repo <owner/repo> --remove-label requires-review` is allowed
    **there and only there**. Never remove a flag on your own judgement that the draft now looks
-   fine.
+   fine. The one sanctioned sweep that clears `requires-review` on evidence rather than on a toggle
+   is the `review-flagged-issues` skill, which re-checks each flagged draft against the current repo
+   and holds anything it cannot verify.
 
 An issue already carrying `claude/pickup` is **armed**. Say so before rewriting, and ask whether to
 proceed — the human's gate has already been passed and the worker may pick it up mid-edit.
@@ -611,3 +613,5 @@ If issue creation fails: quote the exact error and stop.
 - A suggested fix being unverified is not on its own a requires-review trigger — that section is
   unverified by design and carries its own disclaimer. The flag is about inferred *problem* facts,
   unlanded dependencies, and judgement calls
+- NEVER clear `requires-review` from an existing issue in this skill on your own judgement. Clearing
+  it on evidence is the `review-flagged-issues` skill's job; here it takes an explicit user toggle
