@@ -1,6 +1,6 @@
 ---
 name: create-github-bug-issue
-description: Use when the user wants to capture a bug or problem from the current conversation as a GitHub bug-report issue, including screening whether the fix needs human intervention and flagging it non-autonomous, and screening the draft itself and flagging it requires-review when a human should read it before arming it. Also use when asked to rewrite, restructure, or review an existing bug issue against this template. Triggered by /create-github-bug-issue, optionally followed by owner/repo. For a work order for the autonomous issue-worker, use create-work-issue instead. To sweep issues that already carry requires-review and clear the ones now verifiable, use review-flagged-issues instead.
+description: Use when the user wants to capture a bug or problem from the current conversation as a GitHub bug-report issue, including screening whether the fix needs human intervention and flagging it non-autonomous, and screening the draft itself and flagging it requires-review when it was written ahead of an unlanded dependency. Also use when asked to rewrite, restructure, or review an existing bug issue against this template. Triggered by /create-github-bug-issue, optionally followed by owner/repo. For a work order for the autonomous issue-worker, use create-work-issue instead. To sweep issues that already carry requires-review and clear the ones now verifiable, use review-flagged-issues instead.
 allowed-tools:
   - Bash
   - mcp__github__issue_write
@@ -17,9 +17,10 @@ A human may later arm the issue for the autonomous github-dispatcher issue-worke
 `claude/pickup`. So this skill also screens for the opposite case: a fix the headless agent
 **cannot** perform, which gets stamped **`non-autonomous`** and says so at the top of its own body.
 
-It also screens the **draft itself**: a report whose repro, cause, or suggested fix rests on facts
-inferred from the conversation rather than read from the repo, or that depends on a change not yet
-landed, gets stamped **`requires-review`** so a human checks it before `claude/pickup`.
+It also screens the **draft itself** for one specific hazard: a report written against a change
+that has not landed yet — an open PR, an open issue, an unmerged branch. That draft gets stamped
+**`requires-review`** so a human re-checks it against what actually shipped before
+`claude/pickup`.
 
 ## Labels
 
@@ -131,45 +132,58 @@ Both are **conditional**: omitted entirely when the issue is not flagged. Never 
 
 ## The requires-review flag
 
-`non-autonomous` is about the fix: a bot **cannot** do it. `requires-review` is about the draft: a
-bot **could** do it, but the report rests on something a human should check first. The two are
-independent conditions — an issue can carry both, either, or neither.
+`non-autonomous` is about the fix: a bot **cannot** do it. `requires-review` is about **ordering**:
+the fix is fine for a bot, but this report was written against something that has not landed yet, so
+its facts may not survive that landing. It is a dependency hold, not a "someone should check this"
+hold. The two flags are independent conditions — an issue can carry both, either, or neither.
 
 ### Trigger checklist
 
 Flag the issue **`requires-review`** if any of these is true of the draft:
 
-- the report or fix depends on a change that is **not merged or not verified** — an open PR, an
-  unlanded issue, a branch you did not read; its factual claims may not survive that landing
-- it contains a **risk, trade-off, or balance judgement** the author should confirm before a bot
-  acts on it
+- the report or fix depends on a change that is **not merged and not landed** — an open PR, an open
+  issue, an unmerged branch; its factual claims may not survive that landing
 - it is one of a **batch**, and how the earlier items land changes whether the later ones are still
   right
-- a **load-bearing fact was inferred rather than read** from the repo — the repro steps, the actual
-  behaviour, the file the bug is in — and you could not verify it
+- a load-bearing fact — the repro steps, the actual behaviour, the file the bug is in — was **read
+  from an unmerged branch or an open PR** rather than from the default branch, so it may change
+  before the worker sees it
 
-A trigger fires on the **confidence of the draft**, not the difficulty of the fix.
+**The gate: if you cannot name a concrete issue number, PR, or branch, the flag does not apply.**
+Every trigger above names an artifact. That is what makes the flag mechanically clearable later —
+`review-flagged-issues` resolves the hold by checking whether the named thing landed.
 
-The `## ⚠️ Suggested Fix (Unverified Hypothesis)` section is **not** on its own a `requires-review`
-trigger — it carries its own disclaimer, and it is unverified by design on every issue this skill
-creates. A trigger fires when the **problem statement** rests on inferred facts, or when the fix
-turns on a judgement call the author should confirm — not merely because a fix was suggested.
+### Does not fire for
+
+- **a design, taste, or balance judgement** in the fix — state it in `## Description` or in
+  `## ⚠️ Suggested Fix`, so the worker knows which way to lean, rather than blocking the issue.
+- **a symptom observed but not root-caused** — a diagnosis from a screenshot, an inferred repro, a
+  file you guessed at. State the uncertainty in the body and let the worker verify it against the
+  repo. This is the normal condition of a bug report, not an ordering problem.
+- **an unverified suggested fix.** `## ⚠️ Suggested Fix (Unverified Hypothesis)` is unverified by
+  design on every issue this skill creates and carries its own disclaimer.
+- **a fix that is merely hard, large, or risky.** Difficulty is not a hold.
+
+**Sanity check:** if most of a batch comes out flagged, the label has stopped gating anything. Go
+back and re-run each one against the gate — a real ordering hold is the exception, not the norm.
 
 ### Banner
 
-When flagged, this goes in the body verbatim, with the reason filled in. It is the **first content
+When flagged, this goes in the body verbatim, with both fields filled in. It is the **first content
 in the body**, above `## Description` — below the `non-autonomous` banner if that one is present
 too:
 
 ```
 > 🔎 **`requires-review`** — a human must review this draft before arming it.
-> Do **not** add `claude/pickup` until reviewed. Why: <one line — the unverified dependency, the
-> judgement call, the batch ordering, or the inferred fact>.
+> Do **not** add `claude/pickup` until reviewed.
+> Blocked by: <#N | owner/repo#N | PR #N | branch-name>
+> Why: <one line — what in this draft that landing may invalidate>.
 ```
 
 The banner and the label are **one unit**. Never write the banner without adding `requires-review`
-to the label set, and never add the label without the banner. Never emit the banner with the `Why:`
-left generic — name the actual dependency, judgement, or inferred fact.
+to the label set, and never add the label without the banner. `Blocked by:` names a real artifact —
+if you have nothing to put there, the flag does not apply. `Why:` says what the landing may
+invalidate; "may need review" is not a reason.
 
 There is no separate body section: unlike `non-autonomous`, which lists actions a human must
 perform, `requires-review` states one reason, and the reason lives in the banner.
@@ -247,8 +261,10 @@ Labels: <one of: bug | enhancement | question | documentation — chosen based o
 <omit these two lines entirely unless flagged non-autonomous>
 
 > 🔎 **`requires-review`** — a human must review this draft before arming it.
-> Do **not** add `claude/pickup` until reviewed. Why: <the unverified dependency, judgement, or inferred fact>.
-<omit these two lines entirely unless flagged requires-review>
+> Do **not** add `claude/pickup` until reviewed.
+> Blocked by: <#N | owner/repo#N | PR #N | branch-name>
+> Why: <what that landing may invalidate in this draft>.
+<omit these four lines entirely unless flagged requires-review>
 
 ## Human intervention required
 <one concrete bullet per blocker — omit this whole section unless flagged>
@@ -279,7 +295,8 @@ Labels: <one of: bug | enhancement | question | documentation — chosen based o
 Then run the fix against the non-autonomous trigger checklist and the draft against the
 requires-review checklist. For each that fires, add its banner and its label to the set (and
 `## Human intervention required` for non-autonomous). If you cannot tell whether a trigger applies,
-ask rather than assume.
+ask rather than assume. A judgement call in the fix, or a cause you inferred rather than read, does
+**not** fire `requires-review` — state it in the body and let the worker verify it.
 
 ### Step 3 — Show draft
 
@@ -288,7 +305,7 @@ the triggers that fired:
 
 ```
 Flags: `non-autonomous` — <ON: triggers that fired | off>
-       `requires-review` — <ON: the reason | off>
+       `requires-review` — <ON: blocked by #N — what the landing may invalidate | off>
 ```
 
 Then ask, in every state, verbatim:
@@ -305,9 +322,11 @@ Naming a flag toggles it: on if it is off, off if it is on.
 - **non-autonomous** → toggle the flag. Turning it **on** adds the banner, `## Human intervention
   required`, and `non-autonomous` to the label set; if you do not already know what the human must
   do, ask before re-showing. Turning it **off** removes all three. Return to Step 3
-- **requires-review** → toggle the flag. Turning it **on** adds the banner (with a concrete `Why:` —
-  ask if you do not have one) and `requires-review` to the label set. Turning it **off** removes
-  both. Return to Step 3
+- **requires-review** → toggle the flag. Turning it **on** adds the banner and `requires-review` to
+  the label set; the banner needs a concrete `Blocked by:` and `Why:` — ask if you do not have them.
+  If the user turns it on with no artifact to name, take the instruction and write
+  `Blocked by: <none — author override>` so the later sweep can tell it apart from a real dependency
+  hold. Turning it **off** removes both. Return to Step 3
 - **cancel** → stop immediately; do not create anything
 
 The user overrides the screen in either direction: they may turn a flag on that did not fire, or off
@@ -404,7 +423,7 @@ gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx non-aut
 ```bash
 gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx requires-review \
   || gh label create requires-review --repo <owner/repo> --color fbca04 \
-     --description "Draft needs human review before it is armed with claude/pickup"
+     --description "Draft written ahead of an unlanded dependency — review before arming"
 ```
 
 Never recolor or re-describe a label that already exists — take it as it is.
@@ -412,8 +431,8 @@ Never recolor or re-describe a label that already exists — take it as it is.
 #### Gate — before you create
 
 If the `requires-review` banner is in the body, `requires-review` is in the label set — and vice
-versa. One without the other is a bug. Its `Why:` names a concrete dependency, judgement, or
-inferred fact.
+versa. One without the other is a bug. Its `Blocked by:` names a concrete issue, PR, or branch (or
+the author-override marker), and its `Why:` says what that landing may invalidate.
 
 The label set you are about to pass contains `claude-drafted`. If it does not, add it. Do not
 create the issue without it. Skipping the content label does not skip the marker or the flags.
@@ -437,7 +456,9 @@ create the issue without it. Skipping the content label does not skip the marker
     > Do **not** add `claude/pickup`. See **Human intervention required** below.
 
     > 🔎 **`requires-review`** — a human must review this draft before arming it.
-    > Do **not** add `claude/pickup` until reviewed. Why: <the unverified dependency, judgement, or inferred fact>.
+    > Do **not** add `claude/pickup` until reviewed.
+    > Blocked by: <#N | owner/repo#N | PR #N | branch-name>
+    > Why: <what that landing may invalidate in this draft>.
 
     ## Human intervention required
     - <what a human must do>
@@ -478,7 +499,9 @@ create the issue without it. Skipping the content label does not skip the marker
   > Do **not** add `claude/pickup`. See **Human intervention required** below.
 
   > 🔎 **`requires-review`** — a human must review this draft before arming it.
-  > Do **not** add `claude/pickup` until reviewed. Why: <the unverified dependency, judgement, or inferred fact>.
+  > Do **not** add `claude/pickup` until reviewed.
+  > Blocked by: <#N | owner/repo#N | PR #N | branch-name>
+  > Why: <what that landing may invalidate in this draft>.
 
   ## Human intervention required
   - <what a human must do>
@@ -604,14 +627,20 @@ If issue creation fails: quote the exact error and stop.
 - The suggested fix disclaimer must appear verbatim — do not soften or shorten it
 - If no fix emerged from the conversation, omit the fix section entirely — do not invent one
 - ALWAYS screen the draft against the requires-review trigger checklist too — separately from the
-  non-autonomous screen. They answer different questions: can a bot do this, versus is this draft
-  safe to hand a bot yet
+  non-autonomous screen. They answer different questions: can a bot do this, versus was this draft
+  written ahead of something that has not landed
+- `requires-review` is an ORDERING hold, not a "a human should check this" hold. It NEVER fires on a
+  judgement call in the fix, on a symptom observed but not root-caused, on a cause inferred from the
+  conversation rather than read, or on a fix that is merely hard. Those go in the body
+- A suggested fix being unverified is not a requires-review trigger — that section is unverified by
+  design and carries its own disclaimer
+- If you cannot name a concrete issue, PR, or branch in `Blocked by:`, the flag does not apply. Do
+  not flag an issue to express unease
 - The `requires-review` label and its banner are ONE UNIT — never the banner without the label,
   never the label without the banner. A banner with no label is invisible to `gh issue list`
-- The `requires-review` banner's `Why:` names a concrete dependency, judgement, or inferred fact.
-  "May need review" is not a reason
-- A suggested fix being unverified is not on its own a requires-review trigger — that section is
-  unverified by design and carries its own disclaimer. The flag is about inferred *problem* facts,
-  unlanded dependencies, and judgement calls
+- The `requires-review` banner carries BOTH `Blocked by:` and `Why:`. "May need review" is not a
+  reason, and a `Blocked by:` naming nothing leaves the flag unclearable by the later sweep
+- If most of a batch comes out flagged, stop and re-screen. A label that fires on the majority
+  gates nothing
 - NEVER clear `requires-review` from an existing issue in this skill on your own judgement. Clearing
   it on evidence is the `review-flagged-issues` skill's job; here it takes an explicit user toggle

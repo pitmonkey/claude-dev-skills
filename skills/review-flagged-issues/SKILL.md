@@ -1,6 +1,6 @@
 ---
 name: review-flagged-issues
-description: Use when the user wants to review the GitHub issues in a repo that carry the requires-review flag — sweeping every open flagged issue, checking each draft against the current repo, updating bodies with facts now known, and clearing the flag only on the ones whose hold is genuinely resolved while holding the rest with a named blocker. Triggered by /review-flagged-issues, optionally followed by owner/repo and specific issue numbers. To create a new work order use create-work-issue, and for a new bug report use create-github-bug-issue.
+description: Use when the user wants to review the GitHub issues in a repo that carry the requires-review flag — sweeping every open flagged issue, checking each draft against the current repo, updating bodies with facts now known, and clearing the flag only on the ones whose hold is genuinely resolved, holding the rest with a named blocker, and lifting it from the ones flagged for a reason the flag never covered. Triggered by /review-flagged-issues, optionally followed by owner/repo and specific issue numbers. To create a new work order use create-work-issue, and for a new bug report use create-github-bug-issue.
 allowed-tools:
   - Bash
   - Read
@@ -17,11 +17,17 @@ Sweep every open issue carrying **`requires-review`** in a repo, review each one
 repo as it stands **now**, and clear the flag on the issues whose hold is genuinely resolved —
 holding the rest with a concrete blocker.
 
-`requires-review` is a hold on **arming**, applied by `create-work-issue` and
-`create-github-bug-issue` when a draft was written against an unlanded dependency, turns on a
-judgement call, sits in a batch whose order matters, or rests on a fact inferred rather than read.
-Those skills set the flag. **This skill is the only sanctioned way it comes off on evidence** —
-everywhere else, removing it takes an explicit user toggle.
+`requires-review` is a hold on **arming** and an **ordering** hold: `create-work-issue` and
+`create-github-bug-issue` set it when a draft was written against something that has not landed —
+an open PR, an open issue, an unmerged branch — or when it sits in a batch whose order matters. Its
+banner names the blocker on a `Blocked by:` line, and that is what this sweep resolves against.
+**This skill is the only sanctioned way the flag comes off on evidence** — everywhere else,
+removing it takes an explicit user toggle.
+
+The flag is *not* a "a human should think about this" hold. Judgement calls belong under
+`## Known ambiguities` with a stated lean, and an un-root-caused symptom belongs in the body — so
+an issue flagged for one of those was **mis-flagged** under an older reading of the trigger list.
+This sweep has a third verdict for exactly that case.
 
 Clearing the flag does **not** arm the issue. It makes the issue armable: a human still adds
 `claude/pickup`. This skill never applies that label.
@@ -37,9 +43,10 @@ any of them. A held issue with a named blocker is a **successful** outcome, not 
 | "This one looks fine on a reread" | The flag was set for a stated reason. Resolve *that* reason, or hold. |
 | "The rest of the batch is blocked, so clear the easy ones for progress" | Clearing an issue whose upstream is still held is exactly the ordering bug the flag encodes. |
 | "The banner has no `Why:`, so there is nothing to resolve" | A missing or generic `Why:` is unresolvable by definition. Hold it and report the defect. |
-| "The user asked me to review them, so they want them cleared" | They asked for a review. Clearing is one of two valid answers. |
+| "The user asked me to review them, so they want them cleared" | They asked for a review. Clearing is one of three valid answers. |
 | "Ten issues, ten clears — a tidy result" | A sweep that clears everything is the signature of not having checked. |
-| "I read the issue carefully, that is the evidence" | Reading the *issue* is not evidence. The evidence is in the repo, the PR, or the user's answer. |
+| "I read the issue carefully, that is the evidence" | Reading the *issue* is not evidence. The evidence is in the repo or the PR. |
+| "Nothing in this banner names a dependency, so it is mis-flagged" | Only if there **is** a banner and neither it nor the body names an issue, PR, or branch. A vague `Why:` on a real dependency is a HOLD, and a label with no banner at all is a HOLD. |
 
 ## The evidence bar
 
@@ -47,8 +54,8 @@ A **CLEAR** requires a positive fact read during **this run**, statable in one l
 
 - a PR that is merged — `gh pr view <n> --repo <owner/repo> --json state,mergedAt`
 - an issue that is closed — `gh issue view <n> --repo <owner/repo> --json state`
-- a `file:line` in the repo that confirms (or corrects) the claim the draft inferred
-- a direct answer from the user to the judgement call the draft flagged
+- a `file:line` on the default branch that confirms (or corrects) the claim the draft was written
+  against
 
 A merged PR alone is not enough for a dependency hold: read the code it landed. Issues are
 flagged because a body's claims may not survive the landing, and a merged PR that did something
@@ -58,18 +65,46 @@ slightly different is the case this check catches.
 
 ## Reason taxonomy
 
-The four `requires-review` triggers, and what resolves each:
+The three `requires-review` triggers, and what resolves each:
 
 | Flag reason | Resolves when | Check |
 |---|---|---|
-| Unlanded dependency | The PR is merged / the issue is closed **and** the change is visible in the repo | `gh pr view` / `gh issue view` state, then Read the changed file |
-| Inferred fact | The fact is read from the repo and matches — or the body is corrected to what is actually there | Grep/Read the named file, symbol, or path |
-| Judgement call | The user answers it in this session | Surface the question in the verdict table; unanswered means HOLD |
+| Unlanded dependency | The PR is merged / the issue is closed **and** the change is visible on the default branch | `gh pr view` / `gh issue view` state, then Read the changed file |
 | Batch ordering | Every upstream issue is itself cleared **and** landed | The dependency graph from Step 4 |
+| Fact read from an unlanded source | The fact is now on the default branch and matches — or the body is corrected to what is actually there | Grep/Read the named file, symbol, or path on the default branch |
 
-A corrected body clears the fact trigger just as a confirmed one does — the hold is on the draft
-resting on something unread, and reading it resolves the hold either way. What does not clear is
-a fact you could not find at all.
+A corrected body clears the third trigger just as a confirmed one does — the hold is on the draft
+resting on something that had not landed, and reading the landed version resolves it either way.
+What does not clear is a fact you could not find at all.
+
+**Anything else the banner claims is a mis-flag, not a fourth reason.** A `Why:` about a design
+judgement, a taste call, an unset threshold, or a screenshot-derived diagnosis names no artifact and
+can never be resolved by a sweep — those issues would sit flagged forever. Handle them with the
+MIS-FLAGGED verdict below.
+
+## The MIS-FLAGGED verdict
+
+A third verdict, alongside CLEAR and HOLD. It fires when **all** of these hold:
+
+- the body carries a 🔎 banner (so the flag's reason was written down, by a skill), **and**
+- neither the banner's `Blocked by:` nor its `Why:` names an issue, PR, or branch, **and**
+- scanning the body turns up no `#N`, PR link, or branch name the draft depends on either.
+
+That is a flag applied for a reason the flag never covered. The disposition is to **relocate the
+concern and lift the hold**: move it under `## Known ambiguities` with a stated lean (work order) or
+into `## Description` / `## ⚠️ Suggested Fix` (bug report), then remove the banner and the label,
+and say so in the comment.
+
+Two boundaries keep this from becoming a way to clear the whole sweep:
+
+- **A `requires-review` label with no banner at all is still a HOLD defect**, exactly as before.
+  Silence is not evidence the flag was mis-applied — a human may have added the label deliberately,
+  and the sweep cannot resolve a reason nobody stated.
+- **If the banner or the body names a concrete `#N`, PR, or branch, it is a dependency hold** and
+  gets CLEAR or HOLD on the ordinary evidence bar — however vague the `Why:` reads.
+
+MIS-FLAGGED is a disposition of the **flag**, never of the **concern**. The concern must land
+somewhere in the body before the banner comes off.
 
 ## Banner and label come off together
 
@@ -77,7 +112,9 @@ The creation skills treat the `requires-review` banner and label as one unit. Th
 directions:
 
 - **CLEAR** → remove the banner from the body **and** the label from the issue.
-- **HOLD** → keep both, and rewrite the banner's `Why:` to the blocker found this run.
+- **MIS-FLAGGED** → same, once the concern has been relocated into the body.
+- **HOLD** → keep both, and rewrite the banner's `Blocked by:` and `Why:` to the blocker found this
+  run.
 
 A body still carrying the 🔎 banner after the label came off is the same defect the creation
 skills guard against, inverted — and the next human to read it will believe a hold that no longer
@@ -86,8 +123,11 @@ exists.
 ## What this skill may change
 
 - **The body** — re-drafted against its own template with the facts read this run. This is the
-  rewrite path of the owning creation skill, without its create path.
-- **`requires-review`** — removed on CLEAR, kept with a sharper `Why:` on HOLD.
+  rewrite path of the owning creation skill, without its create path. On a MIS-FLAGGED verdict the
+  re-draft also relocates the flagged concern into `## Known ambiguities` with a stated lean, or
+  into the bug-report body, so lifting the hold loses nothing.
+- **`requires-review`** — removed on CLEAR and on MIS-FLAGGED, kept with a sharper `Blocked by:` and
+  `Why:` on HOLD.
 - **`non-autonomous`** — **add-only**. Re-screen the work; if it now clearly needs a human, add
   the flag, its banner, and `## Human intervention required`. Never remove it: this skill screens
   drafts, and a human may have added that flag deliberately.
@@ -182,20 +222,32 @@ For each issue:
 1. **Template** — the eight-section work order (`## Problem / Context`, `## Acceptance criteria`, …)
    means `create-work-issue` owns it; the reproduce/expected/actual shape means
    `create-github-bug-issue` owns it. That decides which template the re-draft is written against.
-2. **Hold reason** — the `Why:` on the 🔎 banner, mapped to the taxonomy above.
+2. **Hold reason** — the 🔎 banner's `Blocked by:` line, falling back to its `Why:` on an older
+   banner that has no `Blocked by:`, mapped to the taxonomy above. Then check the gate: does the
+   banner or the body name an issue, a PR, or a branch?
+   - **Yes** → a dependency hold. It goes to Step 5 for CLEAR or HOLD.
+   - **No** → **MIS-FLAGGED**, per the section above. No repo evidence can resolve it, so it does
+     not go through the evidence bar; it goes through relocation.
+   - `Blocked by: <none — author override>` is neither: the author flagged it deliberately with
+     nothing to name. HOLD it and surface it in the report for the author to toggle off.
 3. **Defects** — record, do not silently fix:
    - `requires-review` label with **no banner** in the body → the reason was never written down.
-     HOLD; the sweep cannot resolve a reason nobody stated.
-   - a banner whose `Why:` is generic ("may need review") → same. HOLD.
+     HOLD; the sweep cannot resolve a reason nobody stated, and this is **not** a mis-flag, which
+     needs a banner to read.
+   - a banner whose `Why:` is generic ("may need review") **and** whose `Blocked by:` names a real
+     artifact → HOLD, and report the thin `Why:`.
    - the issue carries **`claude/pickup`** → it is **armed**. Report it and skip it entirely: do not
      edit, comment on, or relabel an armed issue. The worker may be mid-run on it. Ask the user
      what they want to do with it in the report.
 
 ### Step 4 — Build the dependency graph
 
-Scan every flagged body for references to other work: `#N`, `owner/repo#N`, PR links, "depends on",
-"after … lands", "blocked by", "once #N". Resolve each to an issue or PR, inside or outside the
-flagged set.
+The banner's `Blocked by:` line is the primary edge: it names the issue, PR, or branch this draft
+was written ahead of. Then scan every flagged body for further references — `#N`, `owner/repo#N`, PR
+links, "depends on", "after … lands", "once #N" — to catch edges an older banner did not record.
+Resolve each to an issue or PR, inside or outside the flagged set.
+
+MIS-FLAGGED issues contribute no edges; by definition they name nothing.
 
 Order the review topologically so an upstream verdict is known before its dependents are judged. On
 a cycle, report it and HOLD every issue in it — a cycle means the batch ordering is itself unclear
@@ -211,14 +263,13 @@ Each issue gets a verdict:
 - **CLEAR** — the reason resolved, with a one-line evidence string naming the PR, issue state, or
   `file:line`.
 - **HOLD** — the reason unresolved, with a one-line blocker naming what is missing.
+- **MIS-FLAGGED** — classified in Step 3, not here: the banner names no artifact and neither does
+  the body. It takes no repo evidence, because there is nothing in the repo that could resolve it.
+  Record where the concern is being relocated to instead.
 
 An issue whose upstream is still HOLD is **HOLD**, whatever its own reason, and its blocker names
 that upstream. This is the ordering the flag exists to protect: the later items in a batch are only
 correct once the earlier ones land as written.
-
-Judgement calls are the one reason that can be resolved by the user rather than the repo. Collect
-them and ask — one at a time, in plain language, naming the issue. An unanswered judgement call is
-a HOLD, not an assumption.
 
 ### Step 6 — Compute the writes
 
@@ -232,10 +283,15 @@ For every issue in the sweep, cleared and held alike:
    add the flag, its banner, and a non-empty `## Human intervention required`. It fired before →
    leave it, whatever you now think.
 3. **CLEAR** → delete the 🔎 banner from the body.
-   **HOLD** → rewrite its `Why:` to the blocker found this run, e.g.
-   `Why: blocked by #12 — the retry loop it adds is what this issue's acceptance criteria test.`
+   **MIS-FLAGGED** → relocate the concern first — a judgement into `## Known ambiguities` with a
+   stated lean, an un-root-caused symptom into the body as a stated uncertainty for the worker to
+   verify — **then** delete the banner. Never delete the banner without landing its concern
+   somewhere; that is the one way this verdict loses information.
+   **HOLD** → rewrite its `Blocked by:` and `Why:` to the blocker found this run, e.g.
+   `Blocked by: #12` / `Why: the retry loop #12 adds is what this issue's acceptance criteria test.`
+   A banner with no `Blocked by:` line gains one.
 4. Label set: `claude-drafted` always, plus every label already on the issue, minus
-   `requires-review` on a CLEAR.
+   `requires-review` on a CLEAR or a MIS-FLAGGED.
 
 Where a body needs no change — the facts read match what it already says — say "body unchanged" for
 that issue rather than rewriting it for the sake of a diff.
@@ -245,11 +301,11 @@ that issue rather than rewriting it for the sake of a diff.
 Print a verdict table:
 
 ```
- #   Title                                  Template    Verdict   Evidence / blocker
- 12  Add retry with backoff to poll loop    work-order  CLEAR     PR #40 merged; src/poll.py:88 has the loop
- 13  Surface retry count in status line     work-order  CLEAR     depends on #12 (cleared); ui/status.py:22 confirms the field
- 14  Cache the poll result across runs      work-order  HOLD      needs #13's field name; #13 not landed
- 15  Crash on empty config file             bug         HOLD      judgement call unanswered: fail loudly or default?
+ #   Title                                  Template    Verdict       Evidence / blocker / relocation
+ 12  Add retry with backoff to poll loop    work-order  CLEAR         PR #40 merged; src/poll.py:88 has the loop
+ 13  Surface retry count in status line     work-order  CLEAR         depends on #12 (cleared); ui/status.py:22 confirms the field
+ 14  Cache the poll result across runs      work-order  HOLD          needs #13's field name; #13 not landed
+ 15  Crash on empty config file             bug         MIS-FLAGGED   banner names no dependency; "fail loudly or default?" moved to the body, leaning fail loudly
 ```
 
 Then, per issue, the proposed body changes (as a summary of what changes and why, not a full
@@ -257,13 +313,14 @@ re-paste of unchanged sections) and the comment that will be posted.
 
 Then ask, verbatim:
 
-> **Apply this review? (apply / edit N / clear N / hold N / skip N / cancel)**
+> **Apply this review? (apply / edit N / clear N / hold N / misflag N / skip N / cancel)**
 
 - **apply** → Step 8.
 - **edit N** → the user describes a change to that issue's re-draft; redo it and re-show the table.
-- **clear N** / **hold N** → override the verdict. A user override is an instruction, not an
-  inference — the same carve-out the creation skills already grant. Record it as an override, and
-  say so in that issue's comment.
+- **clear N** / **hold N** / **misflag N** → override the verdict. A user override is an
+  instruction, not an inference — the same carve-out the creation skills already grant. Record it as
+  an override, and say so in that issue's comment. On a `misflag N` override, still relocate the
+  concern into the body before the banner comes off.
 - **skip N** → leave that issue completely untouched this run.
 - **cancel** → stop. Nothing is written.
 
@@ -280,7 +337,8 @@ EOF
 )" --add-label claude-drafted
 ```
 
-Add `--add-label non-autonomous` when that screen newly fired. Then, **cleared issues only**:
+Add `--add-label non-autonomous` when that screen newly fired. Then, **cleared and mis-flagged
+issues only**:
 
 ```bash
 gh issue edit <number> --repo <owner/repo> --remove-label requires-review
@@ -291,7 +349,7 @@ it is licensed by the review in Steps 5–7 — never by a reread.
 
 **remote (MCP):** `mcp__github__issue_write` with `method: update`, the issue number, the new body,
 and the **full intended label set**. An update carrying the complete set drops `requires-review` by
-omission on a CLEAR; on a HOLD the set still contains it.
+omission on a CLEAR or a MIS-FLAGGED; on a HOLD the set still contains it.
 
 A failure on one issue does not abort the sweep: record the exact error, carry on with the rest, and
 report every failure at the end.
@@ -320,6 +378,14 @@ Cleared:
 > issue assumed. Body updated with the landed behaviour. Still needs `claude/pickup` from a human
 > before the worker picks it up.
 
+Mis-flagged:
+
+> Reviewed against `<owner/repo>@<sha>`. **Cleared `requires-review` as mis-applied** — the banner
+> named no unlanded dependency, and nothing in the body does either. The concern was a design
+> judgement ("fail loudly or default to an empty config?"), which belongs under Known ambiguities
+> with a lean rather than in an arming hold; it is now recorded there, leaning fail loudly. Still
+> needs `claude/pickup` from a human before the worker picks it up.
+
 Held:
 
 > Reviewed against `<owner/repo>@<sha>`. **Still held** — #13 is open, and the field name in this
@@ -332,7 +398,8 @@ Overridden:
 
 ### Step 10 — Verify, then report
 
-**Read the labels back, per issue, asserting the direction the verdict implies.** Cleared:
+**Read the labels back, per issue, asserting the direction the verdict implies.** Cleared (and
+mis-flagged, which verifies identically):
 
 ```bash
 gh issue view <number> --repo <owner/repo> --json labels --jq '.labels[].name' \
@@ -351,13 +418,18 @@ gh issue view <number> --repo <owner/repo> --json labels --jq '.labels[].name' \
 **remote (MCP):** the `issue_write` response carries the applied labels; check them the same way and
 re-issue the update if the set is wrong.
 
-Also verify the body matches the label: a cleared issue must carry no 🔎 banner, a held one must.
+Also verify the body matches the label: a cleared or mis-flagged issue must carry no 🔎 banner, a
+held one must. On a mis-flagged issue, also confirm the relocated concern is actually present in the
+body — a banner deleted with nothing put in its place is a lost requirement, not a clean sweep.
 If a re-apply also fails, quote the exact error and say the issue is in the wrong state. Do not
 claim success.
 
 **Then report:**
 
 - **Cleared** — number, title, and the evidence that cleared it.
+- **Mis-flagged** — number, title, and where the concern was relocated to. Report these **separately
+  from Cleared**: they were lifted on definition, not on evidence, and a combined count reads as a
+  sweep that verified more than it did.
 - **Held** — number, title, and the blocker, grouped so the batch order is visible.
 - **Defects** — banner-less labels, generic `Why:` lines, armed issues skipped.
 - **Failures** — any write or comment that errored, quoted.
@@ -371,12 +443,18 @@ claim success.
 - NEVER clear `requires-review` without a positive fact read during this run. A reread of the issue
   is not evidence; the repo, the PR state, or the user's answer is.
 - NEVER clear an issue whose upstream is still held. The ordering is the thing the flag protects.
+- NEVER mark an issue MIS-FLAGGED when its banner or its body names a concrete issue, PR, or branch.
+  That is a dependency hold and it goes through the evidence bar, however vague its `Why:` reads.
+- NEVER mark an issue MIS-FLAGGED on the strength of a missing banner. No banner is a HOLD defect;
+  MIS-FLAGGED needs a banner whose stated reason names no artifact.
+- MIS-FLAGGED disposes of the FLAG, never of the CONCERN. Relocate the concern into the body —
+  Known ambiguities with a lean, or a stated uncertainty — before the banner comes off.
 - ALWAYS treat HOLD as the default and a valid result. A sweep that clears every issue in a batch is
   the signature of a review that did not happen.
 - ALWAYS remove the 🔎 banner when the label comes off, and ALWAYS keep both when it does not. They
   are one unit in both directions.
-- ALWAYS rewrite a held issue's `Why:` to the blocker found this run, so the next sweep starts from
-  better information than this one did.
+- ALWAYS rewrite a held issue's `Blocked by:` and `Why:` to the blocker found this run, so the next
+  sweep starts from better information than this one did.
 - NEVER apply `claude/pickup`. Clearing the flag makes an issue armable; arming stays the human's
   step.
 - NEVER remove `non-autonomous`, and never remove any label a human added. `requires-review` is the
