@@ -112,11 +112,12 @@ If no README and no `docs/` exist, skip this step.
 
 ## Step 4 — Config & numeric-claim reconcile
 
-Three reconciles, each whole-codebase, not diff-local. **Read `references/reconcile.md` for the procedures before running them** — the enumeration rules are what make these work.
+Four reconciles, each whole-codebase, not diff-local. **Read `references/reconcile.md` for the procedures before running them** — the enumeration rules are what make these work.
 
 - **4a — Env-example.** Enumerate every env var the code reads across the whole tree, diff against `.env.example` (or `.sample`/`.template`), and edit the example. Adding only the current change's new keys is the exact bug this step prevents. **Security — load-bearing: NEVER write a real secret value into the example file.** Keys and placeholders only.
 - **4b — Numeric claims.** Any count *about the codebase* ("423 tests") is re-derived by running the project's count command, never carried forward.
 - **4c — Local paths.** Convert same-repo references to repo-relative paths and other-repo references to GitHub URLs; flag what can't be derived for the Step 7 report. Procedure: `references/local-path-reconcile.md`.
+- **4d — Deployment contract.** If the repo publishes a deployed image, write or update `docs/deployment-contract.yaml` — the machine-readable list of env vars and Secret/ConfigMap objects the deployment must provide, each marked `required: true` or `required: false` with its default. Enumerate from the code, never from the prose in `docs/deployment.md`. Procedure and schema: `references/deployment-contract.md`. **Same secret rule as 4a — names and non-secret defaults only, never a value.**
 
 ## Step 5 — Formatting hygiene
 
@@ -150,6 +151,7 @@ Briefly summarise what was changed in each file and why. Note anything skipped a
 - Env-example reconcile: list env keys added/flagged and the example file touched, or why skipped (e.g. "no example env file found").
 - Numeric-claim re-derivation: list any numeric claims corrected (old → new), or why skipped (e.g. "no numeric claims in docs").
 - Local-path reconcile: list paths converted to GitHub URLs (old → new), and any local paths flagged but left as-is because the target repo/remote could not be resolved.
+- Deployment contract: entries added/changed/removed in `docs/deployment-contract.yaml`, whether a CI test now checks it against a settings object, or why the repo was skipped (e.g. "library, nothing deploys it").
 
 ## Common Mistakes
 
@@ -170,5 +172,9 @@ Briefly summarise what was changed in each file and why. Note anything skipped a
 **CI/CD changes almost always mean deployment docs are stale.** If `.github/workflows/`, `Dockerfile`, `docker-compose.yml`, or similar files changed in recent commits, treat that as a mandatory trigger to review deployment docs — even if the change looks minor (e.g. adding a new runner or changing a build flag).
 
 **`.env.example` reconcile is whole-codebase, not diff-local**, and **never write real secret values into it** — keys and placeholders only, even if a real value is visible in the environment.
+
+**A deployment contract without `required: false` entries is the failure mode, not the win.** The point of the file is that it can say "optional, and here is the default" — which prose cannot. Marking everything required just relocates the noise, and every accepted default gets re-flagged by whatever consumes it.
+
+**Don't write a contract the repo cannot check.** Where a settings object exists, the contract ships with the test that asserts they agree; otherwise say plainly in the report that nothing verifies it between runs of this skill.
 
 **Don't hard-code local filesystem paths in docs.** A path like `/home/user/git/other-repo/src/x.py` is meaningless off the author's machine and breaks when anything moves. Reference same-repo files by repo-relative path, and files in other repos by GitHub URL. If the URL can't be derived, flag it in the report rather than leaving a broken local path silently in place.
