@@ -37,19 +37,19 @@ Guiding principles:
 - For prose sections (notes, patterns, known issues): update statements that are now outdated; mark completed items as done
 - Keep it concise — CLAUDE.md is a reference for the AI, not a changelog
 
-### The 250-line gate
+### The 200-line gate
 
 CLAUDE.md loads on every task in the repo. Over-length means Claude pays context for content most tasks don't need, and the universal rules get lost in the noise. This gate is **measured, never estimated** — reading the file and judging it "about right" is the exact failure the gate exists to prevent.
 
 1. Take the CLAUDE.md line count from Step 1's `wc -l`. If you skipped it, run it now.
-2. **Under 250** — record the count for the Step 7 report and continue.
-3. **250 or over** — splitting is **mandatory, not optional**:
+2. **Under 200** — record the count for the Step 7 report and continue.
+3. **200 or over** — splitting is **mandatory, not optional**:
    - Pick the largest task-specific sections — content about a specific domain (testing, deployment, database, security, a subsystem how-to) that doesn't apply to every task Claude does in this repo.
    - Move each one to its `docs/` file and leave the canonical reference line in its place. Destinations and reference lines: `references/docs-topic-map.md`.
-   - Re-run `wc -l CLAUDE.md` and repeat until it is under 250.
-4. If it is over 250 and genuinely nothing is task-specific enough to move, do **not** pass silently — say so explicitly in the Step 7 report, with the count and why.
+   - Re-run `wc -l CLAUDE.md` and repeat until it is under 200.
+4. If it is over 200 and genuinely nothing is task-specific enough to move, do **not** pass silently — say so explicitly in the Step 7 report, with the count and why.
 
-**This does not conflict with "do not rewrite sections that are still accurate" above.** That rule governs *content*: don't reword what is still true. The gate governs *placement*: moving an accurate section verbatim into `docs/` is a move, not a rewrite. An accurate section is still a gate violation if it is task-specific and the file is over 250 lines.
+**This does not conflict with "do not rewrite sections that are still accurate" above.** That rule governs *content*: don't reword what is still true. The gate governs *placement*: moving an accurate section verbatim into `docs/` is a move, not a rewrite. An accurate section is still a gate violation if it is task-specific and the file is over 200 lines.
 
 A how-to that belongs to a topic another doc already owns is a split candidate at any length — see Ownership below.
 
@@ -61,7 +61,7 @@ Every topic has exactly one owning file. Other files link to it; they never carr
 |---|---|---|
 | What the project is, requirements, install, run, test, build/release, contributing | `README.md` | link to it |
 | Agent workflow, planning mandates, repo boundaries, conventions index, doc index | `CLAUDE.md` | — |
-| Architecture, coding conventions, setup detail, testing detail, deployment, ADRs | `docs/*.md` | one-line pointer from `CLAUDE.md` |
+| Architecture, coding conventions, setup detail, testing detail, deployment | `docs/*.md` | one-line pointer from `CLAUDE.md` |
 
 When the same fact appears in two files, **delete it from the non-owner and leave a pointer**. Never resolve an overlap by copying, and never by editing both copies to agree — the second copy is the defect, not its staleness.
 
@@ -155,11 +155,13 @@ Briefly summarise what was changed in each file and why. Note anything skipped a
 
 ## Common Mistakes
 
-**The 250-line gate is measured, not estimated.** Run `wc -l CLAUDE.md`. Reading the file and judging it "about right" is how a 900-line CLAUDE.md sails through a clean report. If the number is 250 or over, splitting is mandatory — not a suggestion to weigh.
+**The 200-line gate is measured, not estimated.** Run `wc -l CLAUDE.md`. Reading the file and judging it "about right" is how a 900-line CLAUDE.md sails through a clean report. If the number is 200 or over, splitting is mandatory — not a suggestion to weigh.
 
 **Never resolve duplication by copying.** One owner, pointers everywhere else. Editing both copies so they agree leaves the defect in place — the second copy *is* the defect.
 
 **README is for humans.** Skill invocations, agent workflow mandates, and internal conventions belong in CLAUDE.md or `docs/`, however accurate they are.
+
+**Docs describe the present, not the past.** `docs/architecture.md` says what the system *is now* — components, boundaries, data flow. It is not a decision log. Why a choice was made lives in the commit that made it, so don't restate rationale in docs, don't append a "Decisions" section to a file that has none, and never seed `docs/decisions.md` or a `docs/adr/` directory. A repo that already keeps a decision log is the exception: update it in place. When content is superseded, rewrite it where it stands rather than layering a new section beside the old one.
 
 **Don't hard-wrap Markdown, and don't rewrap what's already there.** New prose goes on one line per paragraph; existing wrapped prose is left alone until it is edited anyway. Reflowing a file for style is a diff-noise change with no reader benefit.
 
