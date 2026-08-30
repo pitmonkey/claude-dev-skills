@@ -16,7 +16,7 @@ Personal Claude Code skills plugin for dev workflows.
 | `python-init` | Set up uv, pytest, ruff, mypy, pre-commit, CI for a Python project |
 | `review-flagged-issues` | Sweep every open `requires-review` issue in a repo, re-check each draft against the current repo, update bodies with facts now known, and clear the flag only on the issues whose hold is resolved — holding the rest with a named blocker, and lifting it from any flagged for a reason the flag never covered |
 | `sc` | Stage and commit current changes, keeping docs updated |
-| `update-docs` | Keep project documentation in sync with code changes — enforces a measured 250-line cap on `CLAUDE.md` (splitting the overflow into `docs/`) and one owning file per topic across `README.md`, `CLAUDE.md` and `docs/` |
+| `update-docs` | Keep project documentation in sync with code changes — enforces a measured 200-line cap on `CLAUDE.md` (splitting the overflow into `docs/`) and one owning file per topic across `README.md`, `CLAUDE.md` and `docs/` |
 
 ### Issue labels
 
