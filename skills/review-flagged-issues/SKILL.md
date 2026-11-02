@@ -10,6 +10,11 @@ allowed-tools:
   - mcp__github__issue_read
   - mcp__github__get_label
 ---
+## Host compatibility
+
+This skill supports Claude Code and Codex. Explicit invocation may use the host’s native syntax (for example `/sc` or `$sc`). Follow repository instructions and host permissions; Claude `allowed-tools` metadata does not grant Codex permissions. When composing bundled skills, use the native skill mechanism when available; otherwise read and follow the sibling `SKILL.md` relative to this installed skill directory, carrying the stated arguments. Never require a Claude `Skill` tool in Codex. Do not add assistant attribution to generated commits, issues, or requests.
+In Codex, the Claude remote/local routing below does not apply: discover GitHub connector capabilities first and select that transport only if all required issue reads, writes, and label verification are supported; otherwise use authenticated `gh`. Select one transport before writing and keep it throughout. If neither is available, return the prepared draft and explain the missing capability. Keep existing dispatcher labels and confirmation/read-back requirements. In Claude remote sessions, retain the routing below and never fall back to `gh` writes.
+
 
 # Review Flagged Issues (review-flagged-issues)
 

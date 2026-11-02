@@ -6,6 +6,7 @@ Personal Claude Code skills plugin for dev workflows.
 
 | Skill | Description |
 |-------|-------------|
+| `codex-allows` | Set up or audit Codex command rules; map Claude permissions and bundled skill workflows without changing sandbox or trust automatically |
 | `claude-allows` | Add standard permissions to a new repo, or audit an existing `.claude/settings.local.json` (categorize, dedupe, prune one-offs) |
 | `create-github-bug-issue` | Capture a bug or problem from the current conversation as a GitHub bug-report issue, flagging it `non-autonomous` when the fix needs a human and `requires-review` when the draft was written ahead of something unlanded. Also rewrites an existing issue to the template |
 | `create-work-issue` | Author a structured work-order issue for autonomous pickup by the github-dispatcher issue-worker, flagging it `non-autonomous` when the work needs a human and `requires-review` when the draft was written ahead of something unlanded. Also rewrites an existing issue to the template |
@@ -16,7 +17,7 @@ Personal Claude Code skills plugin for dev workflows.
 | `python-init` | Set up uv, pytest, ruff, mypy, pre-commit, CI for a Python project |
 | `review-flagged-issues` | Sweep every open `requires-review` issue in a repo, re-check each draft against the current repo, update bodies with facts now known, and clear the flag only on the issues whose hold is resolved — holding the rest with a named blocker, and lifting it from any flagged for a reason the flag never covered |
 | `sc` | Stage and commit current changes, keeping docs updated |
-| `update-docs` | Keep project documentation in sync with code changes — enforces a measured 200-line cap on `CLAUDE.md` (splitting the overflow into `docs/`) and one owning file per topic across `README.md`, `CLAUDE.md` and `docs/` |
+| `update-docs` | Keep project documentation in sync with code changes — links missing `CLAUDE.md`/`AGENTS.md` counterparts to the existing source and enforces a measured 200-line cap on that source (splitting the overflow into `docs/`) and one owning file per topic across `README.md`, `CLAUDE.md` and `docs/` |
 
 ### Issue labels
 
@@ -63,3 +64,25 @@ After cloning, activate the pre-commit hook (auto-increments patch version on ea
 ```
 git config core.hooksPath .hooks
 ```
+
+## Codex support
+
+The same repository and shared skills support Claude Code and Codex. Existing Claude installation commands above remain valid.
+
+Register the Codex marketplace:
+
+```bash
+codex plugin marketplace add pitmonkey/claude-dev-skills
+```
+
+Install the plugin from that marketplace in the supported Plugins interface. Registration alone does not install it. Refresh with `codex plugin marketplace upgrade claude-dev-skills` and restart the client after local changes. Use native skill invocation, such as `$sc`, `$pr`, or `$python-init`, in Codex; Claude retains its slash commands.
+
+Python setup requires no external `python-pro` agent. New projects use shared `AGENTS.md` instructions imported by a thin `CLAUDE.md`; existing repository instructions and delegation rules are preserved. Documentation maintenance recognizes both instruction files.
+
+`gitgo` uses Claude's loop integration where available and an interruptible, session-bound watch otherwise. No persistent Codex scheduler is installed. GitHub issue skills discover suitable connector capabilities in Codex, falling back to authenticated `gh` when needed. Existing dispatcher labels remain unchanged. `claude-allows` manages Claude settings in either host; it does not configure Codex permissions.
+
+Both plugin manifests share a version. The development pre-commit hook requires Python 3 and increments both together, rejecting invalid or mismatched versions.
+
+Use `$codex-allows` (Codex) or `/claude-dev-skills:codex-allows` (Claude) to configure Codex permissions for selected workflows. See the [permission mapping](skills/codex-allows/references/permission-map.md). Command rules, sandbox access, and connector permissions are configured separately.
+
+`update-docs` preserves the existing instruction source: `CLAUDE.md` gets an `AGENTS.md -> CLAUDE.md` symlink, or `AGENTS.md` gets a `CLAUDE.md -> AGENTS.md` symlink. It edits the resolved source once and preserves the link on subsequent runs. If both are independent files, it preserves them and asks which should own the shared guidance before consolidation.

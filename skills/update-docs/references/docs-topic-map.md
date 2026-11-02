@@ -1,6 +1,6 @@
 # docs/ topic map
 
-Canonical destinations for task-specific content moved out of `CLAUDE.md`, with the reference line to leave behind in its place. Use the reference line instead of the full content — that is what keeps `CLAUDE.md` under the gate while the detail stays findable.
+Canonical destinations for task-specific content moved out of the owning agent instruction file (`CLAUDE.md` or `AGENTS.md`), with the reference line to leave behind in its place. Use the reference line instead of the full content — that is what keeps the owning agent instruction file (`CLAUDE.md` or `AGENTS.md`) under the gate while the detail stays findable.
 
 | Topic | File | Reference line |
 |-------|------|-----------------|
@@ -26,8 +26,8 @@ If a project already uses a different filename for one of these topics, keep the
 
 **Decision history is the git log.** Never create `docs/decisions.md`, a `docs/adr/` directory, or a "Decisions" section — why a choice was made lives in the commit that made it. If the repo already keeps a decision log, update it in place; don't seed one where none exists. `docs/architecture.md` describes the system as it is now, not how it got here.
 
-If the content doesn't fit any row, invent a `docs/<topic>.md` in the same style rather than leaving it in `CLAUDE.md`.
+If the content doesn't fit any row, invent a `docs/<topic>.md` in the same style rather than leaving it in the owning agent instruction file (`CLAUDE.md` or `AGENTS.md`).
 
-**Core project files (`README.md`, `CLAUDE.md`) always stay at the root.** This table applies only to task-specific documentation.
+**Core project files (`README.md`, the owning agent instruction file (`CLAUDE.md` or `AGENTS.md`)) always stay at the root.** This table applies only to task-specific documentation.
 
 When a topic in this table already has a file, check whether recent commits changed it and update the file — not just the reference line.

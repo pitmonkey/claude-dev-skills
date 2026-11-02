@@ -2,6 +2,10 @@
 name: generating-commit-messages
 description: Generate conventional commit messages. Use before every git commit.
 ---
+## Host compatibility
+
+This skill supports Claude Code and Codex. Explicit invocation may use the host’s native syntax (for example `/sc` or `$sc`). Follow repository instructions and host permissions; Claude `allowed-tools` metadata does not grant Codex permissions. When composing bundled skills, use the native skill mechanism when available; otherwise read and follow the sibling `SKILL.md` relative to this installed skill directory, carrying the stated arguments. Never require a Claude `Skill` tool in Codex. Do not add assistant attribution to generated commits, issues, or requests.
+
 
 ## CRITICAL REQUIREMENT
 

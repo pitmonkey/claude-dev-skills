@@ -3,6 +3,11 @@ name: claude-allows
 description: Use when setting up Claude Code permissions in a repo, or to audit an existing .claude/settings.local.json — adds standard git/test/web permissions for a fresh repo, or categorizes and cleans up a drifted allow/deny list ([add]/[modify]/[remove]/[annotated]).
 allowed-tools: [Read, Edit, Write, Glob, Grep, Bash]
 ---
+## Host compatibility
+
+This skill supports Claude Code and Codex. Explicit invocation may use the host’s native syntax (for example `/sc` or `$sc`). Follow repository instructions and host permissions; Claude `allowed-tools` metadata does not grant Codex permissions. When composing bundled skills, use the native skill mechanism when available; otherwise read and follow the sibling `SKILL.md` relative to this installed skill directory, carrying the stated arguments. Never require a Claude `Skill` tool in Codex. Do not add assistant attribution to generated commits, issues, or requests.
+This skill intentionally manages Claude settings even when invoked from Codex. For Codex permission setup or migration, use the sibling `codex-allows` skill; do not translate Claude entries directly here.
+
 
 # claude-allows
 

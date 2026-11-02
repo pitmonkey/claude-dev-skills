@@ -1,21 +1,16 @@
 ---
 name: python-init
-description: ONLY invoke when the user explicitly runs /python-init — do not auto-trigger for any other phrasing or context. Sets up uv, pytest, ruff, mypy, pre-commit, CI, .gitignore, config.py, README.md, and CLAUDE.md for a Python project.
+description: ONLY invoke when the user explicitly requests python-init (including /python-init or $python-init) — do not auto-trigger for any other phrasing or context. Sets up uv, pytest, ruff, mypy, pre-commit, CI, .gitignore, config.py, README.md, and CLAUDE.md for a Python project.
 ---
+## Host compatibility
+
+This skill supports Claude Code and Codex. Explicit invocation may use the host’s native syntax (for example `/sc` or `$sc`). Follow repository instructions and host permissions; Claude `allowed-tools` metadata does not grant Codex permissions. When composing bundled skills, use the native skill mechanism when available; otherwise read and follow the sibling `SKILL.md` relative to this installed skill directory, carrying the stated arguments. Never require a Claude `Skill` tool in Codex. Do not add assistant attribution to generated commits, issues, or requests.
+For new projects, keep shared instructions in `AGENTS.md` and create a thin `CLAUDE.md` containing `@AGENTS.md`. In the procedures and templates below, use AGENTS.md as the instruction source for new projects. For existing projects, discover both files, preserve custom content, follow existing imports, and update the owning source without duplicating shared instructions or automatically migrating files. Apply the measured 200-line policy to each maintained instruction file, including AGENTS.md; this is plugin policy.
+
 
 # python-init
 
 Initialise a Python project to the standard toolchain. **Never auto-trigger** — only run when the user explicitly invokes `/python-init`.
-
-## Prerequisites
-
-Check that the `python-pro` subagent is installed at `.claude/agents/python-pro.md` (project) or `~/.claude/agents/python-pro.md` (user). If neither exists, stop and tell the user:
-
-> **python-pro subagent not found.** Install it before running `/python-init`. See your agent manager or add `.claude/agents/python-pro.md` manually.
-
-Do not proceed until it is present.
-
----
 
 ## Detect mode
 
@@ -279,5 +274,5 @@ Setup, usage, and development commands are in `README.md` — read it rather tha
 
 ## Code changes
 
-All Python code changes must be handed off to the `python-pro` subagent. Do not write Python inline.
+Follow the target repository’s existing agent and delegation instructions. No external subagent is required.
 ````

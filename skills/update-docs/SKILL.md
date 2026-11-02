@@ -3,7 +3,9 @@ name: update-docs
 description: Use when project state has changed — new features, config, env vars, dependencies, deployment changes — and documentation may have drifted from what the code actually does
 allowed-tools: [Read, Edit, Write, Glob, Grep, Bash]
 ---
+## Host compatibility
 
+This skill supports Claude Code and Codex. Explicit invocation may use the host’s native syntax (for example `/sc` or `$sc`). Follow repository instructions and host permissions; Claude `allowed-tools` metadata does not grant Codex permissions. When composing bundled skills, use the native skill mechanism when available; otherwise read and follow the sibling `SKILL.md` relative to this installed skill directory, carrying the stated arguments. Never require a Claude `Skill` tool in Codex. Do not add assistant attribution to generated commits, issues, or requests.
 # Update Docs
 
 Keep project documentation in sync with the current codebase. Do all steps in order.
@@ -13,8 +15,8 @@ Keep project documentation in sync with the current codebase. Do all steps in or
 Run these in parallel:
 - `git log --oneline -20` — recent commits
 - `git diff HEAD` — uncommitted changes (may be empty if just committed)
-- `wc -l CLAUDE.md README.md docs/*.md` — **record the CLAUDE.md count; Step 2 gates on it**
-- Read `CLAUDE.md`
+- Inspect root `CLAUDE.md` and `AGENTS.md` with symlink-aware checks (`test -L`, `readlink`, and resolved paths); record which are regular files, links, missing, or broken. Use these exact uppercase filenames.
+- Read existing instruction sources and record their measured `wc -l` counts, counting a shared symlink target only once; Step 2 gates on these counts.
 - Check for README: `README.md`, `README.rst`, `README.txt` (read whichever exists)
 - Check for deployment docs: `docs/deployment.md` (read if found)
 - Check for a todo/work-tracking file: look for `scratch/todo.md`, `TODO.md` (read if found)
@@ -27,26 +29,47 @@ Then probe the project structure to understand what kind of project this is:
 - Skim the top-level directory layout
 - This determines what to focus on in subsequent steps
 
-## Step 2 — Update CLAUDE.md
+## Step 2 — Synchronize and update agent instructions
+
+### Establish the source and counterpart
+
+Preserve whichever instruction file already owns the content, regardless of whether this skill runs in Claude Code or Codex. Do not choose a source by host or infer creation order from filesystem timestamps.
+
+| Existing state | Action |
+|---|---|
+| Only `CLAUDE.md` is a regular file | Create relative symlink `AGENTS.md -> CLAUDE.md` (`ln -s CLAUDE.md AGENTS.md`) |
+| Only `AGENTS.md` is a regular file | Create relative symlink `CLAUDE.md -> AGENTS.md` (`ln -s AGENTS.md CLAUDE.md`) |
+| One file already links to the other | Preserve the link; update the resolved source once |
+| Both are independent regular files | Preserve both; report the conflict and ask which should become the source before consolidating; continue unrelated documentation work |
+| Neither exists | Skip instruction-file synchronization and report it; do not invent project guidance |
+| Broken/cyclic link, directory, or target outside the repository | Preserve it and report the blocker; do not replace it or write through it |
+
+Inspect links before testing existence, since a broken symlink can appear missing. Never use `ln -sf` or overwrite an existing counterpart. If a valid existing link resolves within the repository and its counterpart is absent, link the missing counterpart to the existing instruction filename without introducing a cycle. If symlinks cannot be created, report the failure; do not silently substitute copied content or an import wrapper.
+
+Before editing, resolve the source path and edit that real file explicitly: some editing tools replace a symlink with a regular file. Verify afterward that both names still resolve to the same source and that the relative symlink remains intact. Repeated runs must leave the same link direction and source unchanged. Include the link in the normal documentation changes; do not commit automatically.
+
+In the remainder of this skill, **agent instructions** means the resolved owning document (`CLAUDE.md` or `AGENTS.md`). Count and update it once. Where both independent documents remain unresolved, preserve their ownership and do not perform destructive consolidation.
+
+### Update the owning document
 
 Update only what has changed since the last sync. Do not rewrite sections that are still accurate.
 
 Guiding principles:
-- Match the existing CLAUDE.md structure — don't add sections that aren't there, don't rename ones that are
+- Match the existing agent instructions structure — don't add sections that aren't there, don't rename ones that are
 - For tables (services, dependencies, config values): update rows where data changed, add new rows, remove deleted ones
 - For prose sections (notes, patterns, known issues): update statements that are now outdated; mark completed items as done
-- Keep it concise — CLAUDE.md is a reference for the AI, not a changelog
+- Keep it concise — the instruction source is a reference for the AI, not a changelog
 
 ### The 200-line gate
 
-CLAUDE.md loads on every task in the repo. Over-length means Claude pays context for content most tasks don't need, and the universal rules get lost in the noise. This gate is **measured, never estimated** — reading the file and judging it "about right" is the exact failure the gate exists to prevent.
+Agent instructions load on every task in the repo. Over-length means the agent pays context for content most tasks don't need, and the universal rules get lost in the noise. This gate is **measured, never estimated** — reading the file and judging it "about right" is the exact failure the gate exists to prevent.
 
-1. Take the CLAUDE.md line count from Step 1's `wc -l`. If you skipped it, run it now.
+1. Take the agent instructions line count from Step 1's `wc -l`. If you skipped it, run it now.
 2. **Under 200** — record the count for the Step 7 report and continue.
 3. **200 or over** — splitting is **mandatory, not optional**:
-   - Pick the largest task-specific sections — content about a specific domain (testing, deployment, database, security, a subsystem how-to) that doesn't apply to every task Claude does in this repo.
+   - Pick the largest task-specific sections — content about a specific domain (testing, deployment, database, security, a subsystem how-to) that doesn't apply to every task the agent does in this repo.
    - Move each one to its `docs/` file and leave the canonical reference line in its place. Destinations and reference lines: `references/docs-topic-map.md`.
-   - Re-run `wc -l CLAUDE.md` and repeat until it is under 200.
+   - Re-run `wc -l <resolved-source-path>` and repeat until it is under 200.
 4. If it is over 200 and genuinely nothing is task-specific enough to move, do **not** pass silently — say so explicitly in the Step 7 report, with the count and why.
 
 **This does not conflict with "do not rewrite sections that are still accurate" above.** That rule governs *content*: don't reword what is still true. The gate governs *placement*: moving an accurate section verbatim into `docs/` is a move, not a rewrite. An accurate section is still a gate violation if it is task-specific and the file is over 200 lines.
@@ -60,16 +83,16 @@ Every topic has exactly one owning file. Other files link to it; they never carr
 | Topic | Owner | Everyone else |
 |---|---|---|
 | What the project is, requirements, install, run, test, build/release, contributing | `README.md` | link to it |
-| Agent workflow, planning mandates, repo boundaries, conventions index, doc index | `CLAUDE.md` | — |
-| Architecture, coding conventions, setup detail, testing detail, deployment | `docs/*.md` | one-line pointer from `CLAUDE.md` |
+| Agent workflow, planning mandates, repo boundaries, conventions index, doc index | the agent instruction source | — |
+| Architecture, coding conventions, setup detail, testing detail, deployment | `docs/*.md` | one-line pointer from the agent instruction source |
 
 When the same fact appears in two files, **delete it from the non-owner and leave a pointer**. Never resolve an overlap by copying, and never by editing both copies to agree — the second copy is the defect, not its staleness.
 
 Two directions, both enforced:
-- CLAUDE.md must not restate README content (install steps, run instructions, feature blurbs).
-- README must not carry internal/implementation detail that belongs in CLAUDE.md or `docs/`.
+- Agent instructions must not restate README content (install steps, run instructions, feature blurbs).
+- README must not carry internal/implementation detail that belongs in agent instructions or `docs/`.
 
-Checking is cheap: diff the section headings of README.md and CLAUDE.md against each other and against `docs/*.md`. Matching or near-matching headings are where duplication hides.
+Checking is cheap: diff the section headings of README.md and agent instructions against each other and against `docs/*.md`. Matching or near-matching headings are where duplication hides.
 
 Common things to check based on project type:
 - **Services/dependencies**: version bumps, new services added, services removed
@@ -92,7 +115,7 @@ Update only what has changed. Match the existing structure and tone exactly.
 
 Keep each at pointer depth — detail lives in `docs/`, per the ownership table. Update version numbers, feature lists, or setup instructions that are now stale.
 
-**Eviction rule:** agent-oriented content found in README — skill invocations, planning mandates, internal conventions, subsystem implementation notes — does not belong there. Move it to `CLAUDE.md` or `docs/` per the ownership table, don't just leave it.
+**Eviction rule:** agent-oriented content found in README — skill invocations, planning mandates, internal conventions, subsystem implementation notes — does not belong there. Move it to the agent instruction source or `docs/` per the ownership table, don't just leave it.
 
 ### Deployment docs (docs/deployment.md)
 
@@ -144,9 +167,9 @@ If a `CHANGELOG.md` was found in Step 1, update it separately — it is release 
 
 ## Step 7 — Report
 
-Briefly summarise what was changed in each file and why. Note anything skipped and why (e.g. "No README found").
-- **CLAUDE.md gate:** state the line count before and after, and whether it passed or forced a split. Always state the number — "looked fine" is not a report.
-- **Sections moved:** each section moved out of CLAUDE.md, with its `docs/` destination.
+Briefly summarise what was changed in each file and why. Report the owning instruction path, symlink direction created or preserved, verification result, and any conflict or link-creation blocker. Note anything skipped and why (e.g. "No README found").
+- **Agent instruction gate:** state the line count before and after, and whether it passed or forced a split. Always state the number — "looked fine" is not a report.
+- **Sections moved:** each section moved out of agent instructions, with its `docs/` destination.
 - **Duplication resolved:** each overlap found, which file kept ownership, which lost the copy.
 - Env-example reconcile: list env keys added/flagged and the example file touched, or why skipped (e.g. "no example env file found").
 - Numeric-claim re-derivation: list any numeric claims corrected (old → new), or why skipped (e.g. "no numeric claims in docs").
@@ -155,17 +178,17 @@ Briefly summarise what was changed in each file and why. Note anything skipped a
 
 ## Common Mistakes
 
-**The 200-line gate is measured, not estimated.** Run `wc -l CLAUDE.md`. Reading the file and judging it "about right" is how a 900-line CLAUDE.md sails through a clean report. If the number is 200 or over, splitting is mandatory — not a suggestion to weigh.
+**The 200-line gate is measured, not estimated.** Run `wc -l <resolved-source-path>`. Reading the file and judging it "about right" is how a 900-line instruction file sails through a clean report. If the number is 200 or over, splitting is mandatory — not a suggestion to weigh.
 
 **Never resolve duplication by copying.** One owner, pointers everywhere else. Editing both copies so they agree leaves the defect in place — the second copy *is* the defect.
 
-**README is for humans.** Skill invocations, agent workflow mandates, and internal conventions belong in CLAUDE.md or `docs/`, however accurate they are.
+**README is for humans.** Skill invocations, agent workflow mandates, and internal conventions belong in agent instructions or `docs/`, however accurate they are.
 
 **Docs describe the present, not the past.** `docs/architecture.md` says what the system *is now* — components, boundaries, data flow. It is not a decision log. Why a choice was made lives in the commit that made it, so don't restate rationale in docs, don't append a "Decisions" section to a file that has none, and never seed `docs/decisions.md` or a `docs/adr/` directory. A repo that already keeps a decision log is the exception: update it in place. When content is superseded, rewrite it where it stands rather than layering a new section beside the old one.
 
 **Don't hard-wrap Markdown, and don't rewrap what's already there.** New prose goes on one line per paragraph; existing wrapped prose is left alone until it is edited anyway. Reflowing a file for style is a diff-noise change with no reader benefit.
 
-**`docs/` matters too — CLAUDE.md and README.md are not the whole job.** If a `docs/` directory exists, it must be checked. Deployment guides, runbooks, and architecture docs drift just as fast and are often more operationally critical.
+**`docs/` matters too — agent instructions and README.md are not the whole job.** If a `docs/` directory exists, it must be checked. Deployment guides, runbooks, and architecture docs drift just as fast and are often more operationally critical.
 
 **Don't skip `docs/` because nothing looks obviously stale.** Check it against the git log — env var additions, config changes, and new deployment steps are easy to miss without an explicit cross-reference.
 
