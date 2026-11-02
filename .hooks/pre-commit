@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
-set -e
-
-PLUGIN_JSON=".claude-plugin/plugin.json"
-
-version=$(grep '"version"' "$PLUGIN_JSON" | sed 's/.*"version": "\(.*\)".*/\1/')
-
-major=$(echo "$version" | cut -d. -f1)
-minor=$(echo "$version" | cut -d. -f2)
-patch=$(echo "$version" | cut -d. -f3)
-
-new_patch=$((patch + 1))
-new_version="${major}.${minor}.${new_patch}"
-
-sed -i "s/\"version\": \"${version}\"/\"version\": \"${new_version}\"/" "$PLUGIN_JSON"
-
-git add "$PLUGIN_JSON"
-
-echo "Version bumped: ${version} → ${new_version}"
+set -euo pipefail
+python3 - <<'PY'
+import json
+import subprocess
+from pathlib import Path
+paths = [Path('.claude-plugin/plugin.json'), Path('.codex-plugin/plugin.json')]
+manifests = [json.loads(path.read_text()) for path in paths]
+version = manifests[0]['version']
+if any(item['version'] != version for item in manifests):
+    raise SystemExit('Plugin versions differ; reconcile before committing')
+parts = version.split('.')
+if len(parts) != 3 or not all(part.isdecimal() for part in parts):
+    raise SystemExit('Expected numeric major.minor.patch version')
+major, minor, patch = map(int, parts)
+new_version = f'{major}.{minor}.{patch + 1}'
+for path, manifest in zip(paths, manifests):
+    manifest['version'] = new_version
+    path.write_text(json.dumps(manifest, indent=2) + '\n')
+subprocess.run(['git', 'add', '--', *map(str, paths)], check=True)
+print(f'Version bumped: {version} → {new_version}')
+PY

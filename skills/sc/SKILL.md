@@ -2,6 +2,10 @@
 name: sc
 description: Use when the user wants to stage and commit current git changes, including keeping documentation up to date before committing. Triggered by /sc.
 ---
+## Host compatibility
+
+This skill supports Claude Code and Codex. Explicit invocation may use the host’s native syntax (for example `/sc` or `$sc`). Follow repository instructions and host permissions; Claude `allowed-tools` metadata does not grant Codex permissions. When composing bundled skills, use the native skill mechanism when available; otherwise read and follow the sibling `SKILL.md` relative to this installed skill directory, carrying the stated arguments. Never require a Claude `Skill` tool in Codex. Do not add assistant attribution to generated commits, issues, or requests.
+
 
 # Stage Commit (sc)
 
@@ -49,7 +53,7 @@ Now run `git status`. If the working tree is still clean after Step 1 — meanin
 
 ### Step 3 — Stage changes
 
-Follow the `stage` skill to safely stage all modified files:
+Safely stage modified files using this procedure:
 - Run `git status` to see all modified, new, and deleted files
 - Stage files explicitly by name — do NOT use `git add -A` or `git add .` blindly
 - Skip `.env*` files, private keys, and any file containing secrets or credentials

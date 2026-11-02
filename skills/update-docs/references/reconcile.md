@@ -22,7 +22,7 @@ Adding only the current change's new keys is the exact bug this step exists to p
 Any documentation line stating a count *about the codebase* (most commonly a test count — "423 tests", "N tests passing") must be re-derived, not carried forward:
 
 - Run the project's count command and read the result. Python: `pytest --collect-only -q` (use the trailing summary line for the collected count). Adapt per project type.
-- Rewrite any stale number in `CLAUDE.md`, `README.md`, and other docs to the derived value.
+- Rewrite any stale number in the owning agent instruction file (`CLAUDE.md` or `AGENTS.md`), `README.md`, and other docs to the derived value.
 - Scope: counts that are cheap to re-derive and drift silently (test counts). Not an open-ended audit of every number in the docs.
 
 ## Local-path reconcile

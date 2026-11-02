@@ -2,6 +2,11 @@
 name: gitgo
 description: Use when the user wants to ship the current work end to end in one step — update docs, stage, commit, push, open a PR or MR, then watch it and switch back to main on merge. Triggered by /gitgo.
 ---
+## Host compatibility
+
+This skill supports Claude Code and Codex. Explicit invocation may use the host’s native syntax (for example `/sc` or `$sc`). Follow repository instructions and host permissions; Claude `allowed-tools` metadata does not grant Codex permissions. When composing bundled skills, use the native skill mechanism when available; otherwise read and follow the sibling `SKILL.md` relative to this installed skill directory, carrying the stated arguments. Never require a Claude `Skill` tool in Codex. Do not add assistant attribution to generated commits, issues, or requests.
+The Claude Skill/loop examples below apply only where those capabilities exist. In Codex, compose sc and pr by reading their sibling skill files, then run the same two-phase watch directly in the active session with interruptible waits. Stop on failed/canceled checks or a closed request; report URLs on every poll. Before cleanup verify both a clean tree and that the current branch is still the expected feature branch. If `git gone` is unavailable, report and leave cleanup to the user. This fallback is session-bound: never claim a persistent watcher, /schedule, or CronDelete exists unless the host exposes it.
+
 
 # Git Go (gitgo)
 
