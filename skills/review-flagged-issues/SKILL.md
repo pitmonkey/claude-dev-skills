@@ -35,7 +35,9 @@ an issue flagged for one of those was **mis-flagged** under an older reading of 
 This sweep has a third verdict for exactly that case.
 
 Clearing the flag does **not** arm the issue. It makes the issue armable: a human still adds
-`claude/pickup`. This skill never applies that label.
+`agent/pickup`. This skill never applies that label.
+
+The dispatcher's pickup labels are `agent/pickup`, `agent/pickup-large` and `agent/backlog`; the older `claude/*` spellings (`claude/pickup` and so on) are exact aliases that still work. Wherever this skill says `agent/pickup`, it means any of these, in either spelling.
 
 ## The default is HOLD
 
@@ -138,10 +140,17 @@ exists.
   drafts, and a human may have added that flag deliberately.
 - **`claude-drafted`** — applied to every issue it touches, per the creation skills' mandatory
   marker rule.
+- **The `model/*` tier** — re-picked against the re-drafted body, by the owning creation skill's
+  **The model tier** rules (aim for mid). An issue with no `model/*` label gains one, plus the
+  closing **Model tier** line. An issue whose label differs from the new pick has the change shown
+  in Step 7 and swapped only on `apply` — the old label may be a human's deliberate call, and the
+  table is where they get to keep it. This skill never splits an issue; if a re-drafted body now
+  reads as `model/max`, say so in the report and leave the split to the creation skill.
 - **A comment** — one per issue touched, recording the verdict and its evidence.
 
-It never applies `claude/pickup`, never removes a label a human added other than
-`requires-review`, and never closes an issue.
+It never applies `agent/pickup`, never removes a label a human added other than
+`requires-review` (and a `model/*` label swapped on a shown, confirmed tier change), and never
+closes an issue.
 
 ## Process
 
@@ -241,7 +250,7 @@ For each issue:
      needs a banner to read.
    - a banner whose `Why:` is generic ("may need review") **and** whose `Blocked by:` names a real
      artifact → HOLD, and report the thin `Why:`.
-   - the issue carries **`claude/pickup`** → it is **armed**. Report it and skip it entirely: do not
+   - the issue carries **`agent/pickup`** → it is **armed**. Report it and skip it entirely: do not
      edit, comment on, or relabel an armed issue. The worker may be mid-run on it. Ask the user
      what they want to do with it in the report.
 
@@ -295,8 +304,10 @@ For every issue in the sweep, cleared and held alike:
    **HOLD** → rewrite its `Blocked by:` and `Why:` to the blocker found this run, e.g.
    `Blocked by: #12` / `Why: the retry loop #12 adds is what this issue's acceptance criteria test.`
    A banner with no `Blocked by:` line gains one.
-4. Label set: `claude-drafted` always, plus every label already on the issue, minus
-   `requires-review` on a CLEAR or a MIS-FLAGGED.
+4. **Re-pick the tier** against the re-drafted body. Write or update the closing **Model tier** line
+   to match.
+5. Label set: `claude-drafted` always, plus every label already on the issue, minus
+   `requires-review` on a CLEAR or a MIS-FLAGGED, with exactly one `model/*` label — the new pick.
 
 Where a body needs no change — the facts read match what it already says — say "body unchanged" for
 that issue rather than rewriting it for the sake of a diff.
@@ -306,19 +317,21 @@ that issue rather than rewriting it for the sake of a diff.
 Print a verdict table:
 
 ```
- #   Title                                  Template    Verdict       Evidence / blocker / relocation
- 12  Add retry with backoff to poll loop    work-order  CLEAR         PR #40 merged; src/poll.py:88 has the loop
- 13  Surface retry count in status line     work-order  CLEAR         depends on #12 (cleared); ui/status.py:22 confirms the field
- 14  Cache the poll result across runs      work-order  HOLD          needs #13's field name; #13 not landed
- 15  Crash on empty config file             bug         MIS-FLAGGED   banner names no dependency; "fail loudly or default?" moved to the body, leaning fail loudly
+ #   Title                                  Template    Verdict       Tier         Evidence / blocker / relocation
+ 12  Add retry with backoff to poll loop    work-order  CLEAR         mid          PR #40 merged; src/poll.py:88 has the loop
+ 13  Surface retry count in status line     work-order  CLEAR         mid → mini   depends on #12 (cleared); ui/status.py:22 confirms the field
+ 14  Cache the poll result across runs      work-order  HOLD          (none) → mid needs #13's field name; #13 not landed
+ 15  Crash on empty config file             bug         MIS-FLAGGED   mid          banner names no dependency; "fail loudly or default?" moved to the body, leaning fail loudly
 ```
+
+The **Tier** column shows the current label, and `→ new` when this run would change or add it.
 
 Then, per issue, the proposed body changes (as a summary of what changes and why, not a full
 re-paste of unchanged sections) and the comment that will be posted.
 
 Then ask, verbatim:
 
-> **Apply this review? (apply / edit N / clear N / hold N / misflag N / skip N / cancel)**
+> **Apply this review? (apply / edit N / clear N / hold N / misflag N / tier N mini|mid|max / skip N / cancel)**
 
 - **apply** → Step 8.
 - **edit N** → the user describes a change to that issue's re-draft; redo it and re-show the table.
@@ -326,6 +339,8 @@ Then ask, verbatim:
   instruction, not an inference — the same carve-out the creation skills already grant. Record it as
   an override, and say so in that issue's comment. On a `misflag N` override, still relocate the
   concern into the body before the banner comes off.
+- **tier N mini|mid|max** → set that issue's tier (use its current tier to keep it unchanged), and
+  re-show the table.
 - **skip N** → leave that issue completely untouched this run.
 - **cancel** → stop. Nothing is written.
 
@@ -342,7 +357,7 @@ EOF
 )" --add-label claude-drafted
 ```
 
-Add `--add-label non-autonomous` when that screen newly fired. Then, **cleared and mis-flagged
+Add `--add-label model/<tier>` when the issue has no tier label, or `--remove-label model/<old> --add-label model/<tier>` on a tier change shown in Step 7. Add `--add-label non-autonomous` when that screen newly fired. Then, **cleared and mis-flagged
 issues only**:
 
 ```bash
@@ -380,7 +395,7 @@ Cleared:
 
 > Reviewed against `<owner/repo>@<sha>`. **Cleared `requires-review`** — the dependency it was
 > written ahead of (#12) merged in <PR link>, and `src/poll.py:88` now carries the retry loop this
-> issue assumed. Body updated with the landed behaviour. Still needs `claude/pickup` from a human
+> issue assumed. Body updated with the landed behaviour. Still needs `agent/pickup` from a human
 > before the worker picks it up.
 
 Mis-flagged:
@@ -389,7 +404,7 @@ Mis-flagged:
 > named no unlanded dependency, and nothing in the body does either. The concern was a design
 > judgement ("fail loudly or default to an empty config?"), which belongs under Known ambiguities
 > with a lean rather than in an arming hold; it is now recorded there, leaning fail loudly. Still
-> needs `claude/pickup` from a human before the worker picks it up.
+> needs `agent/pickup` from a human before the worker picks it up.
 
 Held:
 
@@ -422,6 +437,8 @@ gh issue view <number> --repo <owner/repo> --json labels --jq '.labels[].name' \
 
 **remote (MCP):** the `issue_write` response carries the applied labels; check them the same way and
 re-issue the update if the set is wrong.
+
+Also read back the tier: exactly one `model/*` label, matching the body's **Model tier** line.
 
 Also verify the body matches the label: a cleared or mis-flagged issue must carry no 🔎 banner, a
 held one must. On a mis-flagged issue, also confirm the relocated concern is actually present in the
@@ -460,11 +477,14 @@ claim success.
   are one unit in both directions.
 - ALWAYS rewrite a held issue's `Blocked by:` and `Why:` to the blocker found this run, so the next
   sweep starts from better information than this one did.
-- NEVER apply `claude/pickup`. Clearing the flag makes an issue armable; arming stays the human's
+- NEVER apply `agent/pickup`. Clearing the flag makes an issue armable; arming stays the human's
   step.
 - NEVER remove `non-autonomous`, and never remove any label a human added. `requires-review` is the
-  only label this skill removes.
-- NEVER edit, relabel, or comment on an issue carrying `claude/pickup` — it is armed and the worker
+  only label this skill removes on its own verdict; a `model/*` label is swapped only for a tier
+  change shown in the verdict table and confirmed with `apply`.
+- ALWAYS leave each touched issue with exactly one `model/*` label and a matching **Model tier**
+  line. Never split an issue here — report a re-draft that now reads as `model/max` instead.
+- NEVER edit, relabel, or comment on an issue carrying `agent/pickup` — it is armed and the worker
   may be mid-run. Report it and ask.
 - ALWAYS show the full verdict table and wait for `apply` before the first write.
 - ALWAYS apply `claude-drafted` to every issue this skill edits — it is the marker that keeps

@@ -1,6 +1,6 @@
 ---
 name: create-work-issue
-description: Use when the user wants to create a GitHub issue structured as a work order for autonomous pickup by the github-dispatcher issue-worker (they add the claude/pickup label later), including screening work that needs human intervention and flagging it non-autonomous, and screening the draft itself and flagging it requires-review when it was written ahead of an unlanded dependency. Also use when asked to rewrite, restructure, or review an existing issue against the work-order template. Triggered by /create-work-issue, optionally followed by owner/repo and a free-text description of the work. For a bug report from the current conversation, use create-github-bug-issue instead. To sweep issues that already carry requires-review and clear the ones now verifiable, use review-flagged-issues instead.
+description: Use when the user wants to create a GitHub issue structured as a work order for autonomous pickup by the github-dispatcher issue-worker (they add the agent/pickup label later), including choosing the model tier the worker runs on (model/mini, model/mid or model/max, aiming for mid and splitting work that would need max), screening work that needs human intervention and flagging it non-autonomous, and screening the draft itself and flagging it requires-review when it was written ahead of an unlanded dependency. Also use when asked to rewrite, restructure, or review an existing issue against the work-order template. Triggered by /create-work-issue, optionally followed by owner/repo and a free-text description of the work. For a bug report from the current conversation, use create-github-bug-issue instead. To sweep issues that already carry requires-review and clear the ones now verifiable, use review-flagged-issues instead.
 allowed-tools:
   - Bash
   - mcp__github__issue_write
@@ -17,7 +17,7 @@ In Codex, the Claude remote/local routing below does not apply: discover GitHub 
 
 Author a **work-order** GitHub issue and create it on GitHub. The issue is shaped for
 the **github-dispatcher issue-worker**: a headless Claude agent that, once a human adds the
-`claude/pickup` label, clones the repo and implements the issue end to end (plan → test-first
+`agent/pickup` label, clones the repo and implements the issue end to end (plan → test-first
 → PR) with **no human in the loop**. The agent reads only the issue **title + body**, and
 resolves every gap it hits by making a documented assumption and proceeding.
 
@@ -35,21 +35,26 @@ top of its own body, so nobody wastes a worker run on it.
 
 It also screens the **draft itself** for one specific hazard: an issue written ahead of something
 that has not landed yet. That draft gets stamped **`requires-review`** — a hold on arming, not a
-hold on the work — so a human re-checks it against what actually shipped before `claude/pickup`
+hold on the work — so a human re-checks it against what actually shipped before `agent/pickup`
 goes on it.
+
+Finally, it picks the **model tier** the worker runs on and stamps it as exactly one `model/*` label. The planning session that runs this skill is the expensive, high-reasoning step; its job is to do the hard thinking up front so the worker can run on a cheaper model. See **The model tier**.
+
+The dispatcher's pickup labels are `agent/pickup`, `agent/pickup-large` and `agent/backlog`. The older `claude/*` spellings (`claude/pickup` and so on) are exact aliases that still work, so wherever this skill talks about an issue carrying `agent/pickup`, it means any of these, in either spelling.
 
 ## Labels
 
-One mandatory marker, two independent flags, one prohibition. Do not conflate them.
+One mandatory marker, one mandatory tier label, two independent flags, one prohibition. Do not conflate them.
 
 | Label | Rule |
 |---|---|
 | `claude-drafted` | **ALWAYS.** Every issue this skill creates or rewrites, no exceptions. |
 | `non-autonomous` | Only when the non-autonomous screen fires. |
 | `requires-review` | Only when the review screen fires. Independent of `non-autonomous`. |
-| `claude/pickup` | **NEVER.** Arming for the autonomous worker is the human's step — the last gate before a bot writes a PR. |
+| `model/mini` \| `model/mid` \| `model/max` | **ALWAYS exactly one.** The tier this skill chose — see **The model tier**. A modifier: it picks the model and never starts a run on its own. |
+| `agent/pickup`, `agent/pickup-large`, `agent/backlog` (and their `claude/*` aliases) | **NEVER.** Arming for the autonomous worker is the human's step — the last gate before a bot writes a PR. |
 
-The prohibition is scoped to `claude/pickup` alone. It is **not** a ban on labelling. Creating an
+The prohibition is scoped to the pickup (trigger) labels alone. It is **not** a ban on labelling: `model/*` is a modifier, not a trigger, and the skill applies it. It never touches `ai/*` (harness choice) or `agent/research`; those stay the human's call when arming. Creating an
 issue without `claude-drafted` is a skill failure — the marker is the only way a human later finds
 skill-created issues to triage.
 
@@ -57,11 +62,12 @@ skill-created issues to triage.
 
 | Thought | Reality |
 |---|---|
-| "The skill says never apply labels" | It says never apply `claude/pickup`. `claude-drafted` is mandatory. |
+| "The skill says never apply labels" | It says never apply `agent/pickup`. `claude-drafted` is mandatory. |
 | "This issue is `non-autonomous`, so no marker" | `non-autonomous` issues get `claude-drafted` too. |
 | "The user didn't ask for a label" | The marker is not a user preference; it is how the issue stays findable. |
 | "The label doesn't exist in the repo yet" | Create it (local `gh`) or let GitHub auto-create it (remote MCP). Do not drop it. |
 | "I'm only rewriting/reviewing an existing issue" | Rewriting applies the marker too. See **Rewrite / review an existing issue**. |
+| "Mid is the dispatcher default, so no tier label is needed" | Always apply exactly one `model/*`, even `model/mid`. The label is what makes the choice visible and overridable. |
 | "Three labels is a lot — I'll pick the important one" | `claude-drafted` is mandatory and the other two are independent conditions. Applying fewer is not simplification, it is a dropped marker. |
 
 ## Rewrite / review an existing issue
@@ -76,12 +82,17 @@ opinion. Review and rewrite are the same path — reviewing produces the correct
    Keep the author's facts; do not invent. Genuine gaps are asked about (thin path) or recorded
    under **Known ambiguities**.
 3. Run **both** screens — non-autonomous and requires-review — against the work as re-drafted,
-   exactly as for a new issue. A rewrite is a new draft: re-screen it, do not inherit the old
-   verdict.
+   exactly as for a new issue, and re-pick the model tier. A rewrite is a new draft: re-screen it,
+   do not inherit the old verdict.
 4. Compute the full intended label set — **including `claude-drafted`**, plus `non-autonomous` if
    that screen fires, plus `requires-review` if the review screen fires, plus any pre-existing
-   labels the human already put there. Never `claude/pickup`, and never strip a label a human
-   added.
+   labels the human already put there, plus exactly one `model/*` label. Never `agent/pickup`, and
+   never strip a label a human added.
+
+   If the issue already carries a `model/*` label that differs from the tier you picked, show both
+   in Step 3 and let the user choose — the existing label may be a human's deliberate call. Only
+   when they pick yours do you swap it (`--remove-label model/<old> --add-label model/<new>`); that
+   instruction is the one exception to the add-only rule below, alongside the flag toggles.
 5. Show the re-drafted issue and go through the same confirmation loop (Step 3 / Step 4), with
    **update** in place of create.
 6. Write it back and verify:
@@ -101,7 +112,7 @@ opinion. Review and rewrite are the same path — reviewing produces the correct
 
    Then run the same read-back verification as Step 8.
 
-An issue already carrying `claude/pickup` is **armed**. Say so before rewriting, and ask whether to
+An issue already carrying `agent/pickup` is **armed**. Say so before rewriting, and ask whether to
 proceed — the human's gate has already been passed and the worker may pick it up mid-edit.
 
 ## The work-order template
@@ -134,7 +145,12 @@ Title: <concise imperative — e.g. "Add retry with backoff to the GitHub poll l
 
 ## Known ambiguities
 <forks you already see — pre-decide them or say which way to lean, so the agent does not guess blindly. N/A if none.>
+
+---
+**Model tier:** `model/<mini|mid|max>` — <one line: why this tier>
 ```
+
+The closing **Model tier** line is not one of the eight sections; it is always present and always matches the `model/*` label. It tells a human why the tier was chosen, so they can disagree before arming.
 
 **Load-bearing sections:** *Acceptance criteria* (turns a vague ask into tests) and
 *Scope / Non-goals* (fences an unsupervised agent). Do not finalize an issue without real
@@ -167,7 +183,7 @@ When flagged, this is the **first content in the body**, above `## Problem / Con
 
 ```
 > ⚠️ **`non-autonomous`** — requires human intervention; not for autonomous pickup.
-> Do **not** add `claude/pickup`. See **Human intervention required** below.
+> Do **not** add `agent/pickup`. See **Human intervention required** below.
 ```
 
 ### Human intervention required
@@ -228,7 +244,7 @@ When flagged, this goes in the body verbatim, with both fields filled in:
 
 ```
 > 🔎 **`requires-review`** — a human must review this draft before arming it.
-> Do **not** add `claude/pickup` until reviewed.
+> Do **not** add `agent/pickup` until reviewed.
 > Blocked by: <#N | owner/repo#N | PR #N | branch-name>
 > Why: <one line — what in this draft that landing may invalidate>.
 ```
@@ -243,6 +259,40 @@ perform, `requires-review` states one blocker, and it lives in the banner.
 
 **When both flags fire**, the `non-autonomous` banner comes first, then the `requires-review`
 banner, then `## Human intervention required`, then `## Problem / Context` and the rest.
+
+## The model tier
+
+The dispatcher runs the issue-worker on the model its `model/*` label maps to. As a rough guide: `model/mini` is a Haiku-class model, `model/mid` a Sonnet-class model, `model/max` an Opus-class model. With no label the worker's usual model runs, which is mid. The label changes only the model, never the turn or budget limits.
+
+The tier is set by **how much reasoning the worker still has to do after reading the body**, not by how big the diff is.
+
+| Tier | When |
+|---|---|
+| `model/mini` | Fully specified. The body names the exact files and the exact change, acceptance is checkable with one command, and nothing is left to decide. A rename, a config value, a doc fix, a one-function fix whose cause is already known. |
+| `model/mid` | **The target.** One coherent body of work with a plan in the body. The worker uses judgement inside it: touches a few files, writes tests, follows patterns the repo already has. |
+| `model/max` | The worker would still have to reason hard: open design decisions, a change that cuts across several modules, a root cause nobody has found yet, concurrency/security/data migration, or a pattern with no precedent in the repo. |
+
+### Aim for mid
+
+This is a lean, not a rule. Most issues should land at `model/mid`: one coherent piece of work, sized for a Sonnet-class worker.
+
+- **Do the thinking here, not in the worker.** This session runs on a high-reasoning model. Spend it settling what a cheaper worker would otherwise have to work out.
+- **Do not fragment mid work into minis.** Five mini issues usually cost more than one mid issue — each run re-clones, re-reads and re-tests the repo. Split only to bring max work down.
+- **Take mini when it is natural.** Work that is small by nature, or a clean piece that lifts out of a bigger job (a rename, a constant, a doc line), goes in as `model/mini`. Spot it; do not hunt for it.
+
+### Bringing max down
+
+When a draft reads as `model/max`, do not accept that at once. In order:
+
+1. **Close the open decisions.** Each design fork the worker would have to resolve — settle it now, by asking the user (one question at a time) or by reading the repo, and write the answer into the body as a decision (under `## Constraints` or `## Scope / Non-goals`), not as a lean under `## Known ambiguities`. Fewer open forks, lower tier.
+2. **Split.** If it is still max, propose an ordered batch of **mid-sized** issues (with a mini only where a piece is naturally that small). Each gets its own acceptance criteria and its own tier, and each later issue names the earlier one it builds on under `## Pointers`. Run the requires-review screen on each: a later issue written ahead of an earlier one that has not landed is exactly that flag's batch trigger.
+3. **Accept max** only when splitting does not help — a change that must land atomically, or a diagnosis that cannot be cut into parts. Say which in the **Model tier** line. A `model/max` issue is a hint that the human may prefer to work it interactively before arming it; the report says so.
+
+A split is a proposal: show it in the draft (Step 3) and create nothing until the user confirms the breakdown.
+
+**Sanity checks, both ways.** If most of a batch comes out `model/max`, stop and re-plan — the thinking has not been done yet. If one piece of work has become a handful of `model/mini` issues, merge them back into one `model/mid` issue.
+
+`model/max` is not `non-autonomous`. Max means the worker can do it but needs the most capable model; non-autonomous means a bot cannot do it at all. The two are independent, and a `non-autonomous` issue still gets a tier for when it is eventually armed.
 
 ## Process
 
@@ -335,6 +385,8 @@ nothing unlanded at all.
   stated lean and does **not** fire the flag; nor does a fact you inferred from the default branch —
   say so in the body and let the worker verify it.
 
+**Then pick the model tier** (see **The model tier**). If the draft reads as `model/max`, work through **Bringing max down** before showing it: close the open decisions, then propose a split if it is still max. Write the **Model tier** line and add exactly one `model/*` label to the set.
+
 ### Step 3 — Show draft
 
 Display the full drafted title + body (all eight sections, plus any banners and `## Human
@@ -342,16 +394,19 @@ intervention required` if flagged). Above the draft, print the flag status and, 
 is on, the triggers that fired:
 
 ```
+Tier:  `model/<tier>` — <the one-line reason>
 Flags: `non-autonomous` — <ON: triggers that fired | off>
        `requires-review` — <ON: blocked by #N — what the landing may invalidate | off>
 ```
 
+If you are proposing a split, show the whole batch: one line per issue (title, tier, what it builds on), then each draft in order.
+
 Then ask, in every state, verbatim:
 
-> **Create this issue, edit it, or toggle a flag?
-> (create / edit / non-autonomous / requires-review / cancel)**
+> **Create this issue, edit it, change the tier, or toggle a flag?
+> (create / edit / mini / mid / max / non-autonomous / requires-review / cancel)**
 
-Naming a flag toggles it: on if it is off, off if it is on.
+Naming a flag toggles it: on if it is off, off if it is on. Naming a tier sets it.
 
 ### Step 4 — Confirmation loop
 
@@ -367,6 +422,8 @@ Naming a flag toggles it: on if it is off, off if it is on.
   If the user turns it on with no artifact to name, take the instruction and write
   `Blocked by: <none — author override>` so the later sweep can tell it apart from a real dependency
   hold. Turning it **off** removes both. Return to Step 3.
+- **mini / mid / max** → set the tier: swap the `model/*` label in the set and rewrite the **Model
+  tier** line (the reason becomes "set by author" unless they gave one). Return to Step 3.
 - **cancel** → stop immediately; do not create anything.
 
 The user overrides the screen in either direction: they may turn a flag on that did not fire, or off
@@ -391,15 +448,18 @@ Before creating, verify:
    `Why:` says what that landing may invalidate — not "may need review".
 4. The label set you are about to pass contains `claude-drafted`. If it does not, add it. Do not
    create the issue without it.
+5. The label set contains **exactly one** `model/*` label, and the body's **Model tier** line names
+   the same tier. With more than one, the dispatcher runs the highest, which silently undoes the
+   choice.
 
 ### Step 6 — Ensure the label set exists
 
-The label set is `claude-drafted`, plus `non-autonomous` and/or `requires-review` for each flag that
-is on.
+The label set is `claude-drafted`, plus exactly one `model/*` label, plus `non-autonomous` and/or
+`requires-review` for each flag that is on.
 
 - **remote (MCP):** No separate create step is needed — pass the whole set in the `labels` array
-  when you create the issue (Step 7) and GitHub auto-creates any missing label (this covers all
-  three of `claude-drafted`, `non-autonomous` and `requires-review` — the MCP token has push access,
+  when you create the issue (Step 7) and GitHub auto-creates any missing label (this covers
+  `claude-drafted`, the `model/*` label, `non-autonomous` and `requires-review` — the MCP token has push access,
   so a label is created on first use). Optionally check first with
   `mcp__github__get_label` (owner, repo, name) so you can tell the user whether a label is brand
   new. A freshly auto-created label gets a default color — that is cosmetic and fine; recolor it
@@ -410,6 +470,14 @@ is on.
   gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx claude-drafted \
     || gh label create claude-drafted --repo <owner/repo> --color 5319e7 \
        --description "Drafted by a Claude issue-creation skill; awaiting human triage"
+  ```
+
+  The chosen tier label (the dispatcher creates these in repos it watches; this covers the rest):
+
+  ```bash
+  gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx model/<tier> \
+    || gh label create model/<tier> --repo <owner/repo> --color c5def5 \
+       --description "Run this item on the <tier> model tier (dispatcher)"
   ```
 
   Only when flagged `non-autonomous`:
@@ -436,17 +504,17 @@ is on.
   - `method`: `create`
   - `owner` / `repo`: the confirmed target
   - `title`: the drafted title
-  - `labels`: `["claude-drafted"]`, plus `"non-autonomous"` and/or `"requires-review"` for each flag
-    that is on — **never `claude/pickup`**, on any kind of issue
+  - `labels`: `["claude-drafted", "model/<tier>"]`, plus `"non-autonomous"` and/or `"requires-review"`
+    for each flag that is on — **never `agent/pickup`**, on any kind of issue
   - `body`: the full eight-section body (all sections; empty ones marked `N/A`), preceded by the
     banner(s) and `## Human intervention required` **only for the flags that are on**:
 
     ```
     > ⚠️ **`non-autonomous`** — requires human intervention; not for autonomous pickup.
-    > Do **not** add `claude/pickup`. See **Human intervention required** below.
+    > Do **not** add `agent/pickup`. See **Human intervention required** below.
 
     > 🔎 **`requires-review`** — a human must review this draft before arming it.
-    > Do **not** add `claude/pickup` until reviewed.
+    > Do **not** add `agent/pickup` until reviewed.
     > Blocked by: <#N | owner/repo#N | PR #N | branch-name>
     > Why: <what that landing may invalidate in this draft>.
 
@@ -473,6 +541,9 @@ is on.
 
     ## Known ambiguities
     <... or N/A>
+
+    ---
+    **Model tier:** `model/<tier>` — <why this tier>
     ```
 
 - **local (gh):**
@@ -482,12 +553,13 @@ is on.
     --repo <owner/repo> \
     --title "<title>" \
     --label "claude-drafted" \
+    --label "model/<tier>" \
     --body "$(cat <<'EOF'
   > ⚠️ **`non-autonomous`** — requires human intervention; not for autonomous pickup.
-  > Do **not** add `claude/pickup`. See **Human intervention required** below.
+  > Do **not** add `agent/pickup`. See **Human intervention required** below.
 
   > 🔎 **`requires-review`** — a human must review this draft before arming it.
-  > Do **not** add `claude/pickup` until reviewed.
+  > Do **not** add `agent/pickup` until reviewed.
   > Blocked by: <#N | owner/repo#N | PR #N | branch-name>
   > Why: <what that landing may invalidate in this draft>.
 
@@ -514,14 +586,19 @@ is on.
 
   ## Known ambiguities
   <... or N/A>
+
+  ---
+  **Model tier:** `model/<tier>` — <why this tier>
   EOF
   )"
   ```
 
+For a confirmed split, create the issues in order, earliest first, so each later body can name the real number of the one it builds on — fill those numbers in before creating the next.
+
 Add `--label "non-autonomous"` and/or `--label "requires-review"` for each flag that is on. Each
 banner, and the `## Human intervention required` block, is omitted entirely when its flag is off.
 
-**Apply `claude-drafted` (plus any flag labels that are on) — never `claude/pickup`.** The marker
+**Apply `claude-drafted` and the `model/*` label (plus any flag labels that are on) — never `agent/pickup`.** The marker
 keeps the issue findable; arming stays the human's step.
 
 ### Step 8 — Verify labels, then report
@@ -561,9 +638,22 @@ above. Do not merge the two into one loop; the marker check is unconditional and
 A body carrying the `requires-review` banner with no `requires-review` label is the exact failure
 this check exists to catch.
 
+**Then read the tier back** — exactly one `model/*` label, the one you chose:
+
+- **local (gh):**
+
+  ```bash
+  gh issue view <number> --repo <owner/repo> --json labels --jq '.labels[].name' | grep '^model/'
+  ```
+
+  If `model/<tier>` is missing, `gh issue edit <number> --repo <owner/repo> --add-label model/<tier>`. If another `model/*` label is there that you did not intend, report it rather than removing it.
+
+- **remote (MCP):** check the `issue_write` response labels the same way; re-apply with
+  `method: update` and the full intended `labels` array if needed.
+
 **Then report.** Print the created issue's URL, the labels actually present (e.g.
-`Stamped: claude-drafted, non-autonomous, requires-review`), then the base line, then one addendum
-per flag that is on:
+`Stamped: claude-drafted, model/mid, non-autonomous, requires-review`), then the base line, then one
+addendum per flag that is on. For a batch, print one line per issue (number, title, tier) first.
 
 - **remote (MCP):** take the URL from the `issue_write` response (its `html_url` / `url` field).
 - **local (gh):** take the URL returned by `gh issue create`.
@@ -571,7 +661,15 @@ per flag that is on:
 **Always:**
 
 > Stamped `claude-drafted`. List candidates later with `gh issue list --label claude-drafted`,
-> then add `claude/pickup` to the ones you want the issue-worker to implement.
+> then add `agent/pickup` to the ones you want the issue-worker to implement.
+> Tier: `model/<tier>` — change the label before arming if you disagree.
+
+**Plus, if `model/max`:**
+
+> `model/max` — <why splitting did not help>. Consider working this one interactively before
+> arming it.
+
+**Plus, if the work is long but not hard** (many files or acceptance criteria at mid or mini): suggest the human arm it with `agent/pickup-large` (more turns and budget, same model). Suggest only — never apply it.
 
 **Plus, if `non-autonomous`:**
 
@@ -589,11 +687,16 @@ If issue creation fails: quote the exact error and stop.
 
 - ALWAYS apply `claude-drafted` to every issue this skill creates or rewrites — flagged or not.
   See **Labels**. It is a marker, not an arming label; it triggers nothing.
-- NEVER apply `claude/pickup`. Arming for autonomous pickup is the human's deliberate step;
+- NEVER apply `agent/pickup`. Arming for autonomous pickup is the human's deliberate step;
   creating an armed issue would skip the last review gate before a bot opens a PR. This holds for
   `non-autonomous` and `requires-review` issues too — they are not armed and not "armed but
-  warned". This prohibition covers `claude/pickup` only — it never licenses dropping
+  warned". This prohibition covers `agent/pickup` only — it never licenses dropping
   `claude-drafted`.
+- ALWAYS apply exactly one `model/*` label, and write a matching **Model tier** line at the end of
+  the body. Aim for `model/mid`; bring `model/max` down by closing decisions and splitting before
+  accepting it; never fragment mid work into minis.
+- NEVER apply a pickup label (`agent/pickup`, `agent/pickup-large`, `agent/backlog`, or a `claude/*`
+  alias) and never touch `ai/*` or `agent/research`.
 - ALWAYS screen the work against the non-autonomous trigger checklist before finalizing. Catching it
   at creation is the whole point; a label added days later has already cost a wasted worker run.
 - NEVER apply `non-autonomous` without a non-empty `## Human intervention required` naming concrete
