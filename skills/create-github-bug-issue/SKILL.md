@@ -1,6 +1,6 @@
 ---
 name: create-github-bug-issue
-description: Use when the user wants to capture a bug or problem from the current conversation as a GitHub bug-report issue, including screening whether the fix needs human intervention and flagging it non-autonomous, and screening the draft itself and flagging it requires-review when it was written ahead of an unlanded dependency. Also use when asked to rewrite, restructure, or review an existing bug issue against this template. Triggered by /create-github-bug-issue, optionally followed by owner/repo. For a work order for the autonomous issue-worker, use create-work-issue instead. To sweep issues that already carry requires-review and clear the ones now verifiable, use review-flagged-issues instead.
+description: Use when the user wants to capture a bug or problem from the current conversation as a GitHub bug-report issue, including choosing the model tier the worker would run the fix on (model/mini, model/mid or model/max — pinning the root cause in the session first so the fix lands at mid or below), screening whether the fix needs human intervention and flagging it non-autonomous, and screening the draft itself and flagging it requires-review when it was written ahead of an unlanded dependency. Also use when asked to rewrite, restructure, or review an existing bug issue against this template. Triggered by /create-github-bug-issue, optionally followed by owner/repo. For a work order for the autonomous issue-worker, use create-work-issue instead. To sweep issues that already carry requires-review and clear the ones now verifiable, use review-flagged-issues instead.
 allowed-tools:
   - Bash
   - mcp__github__issue_write
@@ -19,18 +19,21 @@ Summarise the specific problem or bug discussed in this conversation and create 
 GitHub issue. Always shows a draft for review before creating.
 
 A human may later arm the issue for the autonomous github-dispatcher issue-worker by adding
-`claude/pickup`. So this skill also screens for the opposite case: a fix the headless agent
+`agent/pickup`. So this skill also screens for the opposite case: a fix the headless agent
 **cannot** perform, which gets stamped **`non-autonomous`** and says so at the top of its own body.
 
 It also screens the **draft itself** for one specific hazard: a report written against a change
 that has not landed yet — an open PR, an open issue, an unmerged branch. That draft gets stamped
 **`requires-review`** so a human re-checks it against what actually shipped before
-`claude/pickup`.
+`agent/pickup`.
+
+It also picks the **model tier** the worker would fix it on, stamped as exactly one `model/*` label. This session has the conversation's context; it should pin down the root cause while it can, so the fix lands on a cheaper model. See **The model tier**.
+
+The dispatcher's pickup labels are `agent/pickup`, `agent/pickup-large` and `agent/backlog`. The older `claude/*` spellings (`claude/pickup` and so on) are exact aliases that still work, so wherever this skill talks about an issue carrying `agent/pickup`, it means any of these, in either spelling.
 
 ## Labels
 
-One mandatory marker, one content label, two independent flags, one prohibition. Do not conflate
-them.
+One mandatory marker, one content label, one mandatory tier label, two independent flags, one prohibition. Do not conflate them.
 
 | Label | Rule |
 |---|---|
@@ -38,9 +41,10 @@ them.
 | content label | One of `bug` / `enhancement` / `question` / `documentation`, chosen from the issue content. The user may skip it — `claude-drafted` may not be skipped. |
 | `non-autonomous` | Only when the non-autonomous screen fires. |
 | `requires-review` | Only when the review screen fires. Independent of `non-autonomous`, and not a content label. |
-| `claude/pickup` | **NEVER.** Arming for the autonomous worker is the human's step. |
+| `model/mini` \| `model/mid` \| `model/max` | **ALWAYS exactly one.** The tier this skill chose — see **The model tier**. A modifier: it picks the model and never starts a run on its own. Not a content label; skipping labels never drops it. |
+| `agent/pickup`, `agent/pickup-large`, `agent/backlog` (and their `claude/*` aliases) | **NEVER.** Arming for the autonomous worker is the human's step. |
 
-The prohibition is scoped to `claude/pickup` alone. It is **not** a ban on labelling. Creating an
+The prohibition is scoped to the pickup (trigger) labels alone. It is **not** a ban on labelling: `model/*` is a modifier, not a trigger, and the skill applies it. It never touches `ai/*` (harness choice) or `agent/research`; those stay the human's call when arming. Creating an
 issue without `claude-drafted` is a skill failure — the marker is the only way a human later finds
 skill-created issues to triage.
 
@@ -48,11 +52,12 @@ skill-created issues to triage.
 
 | Thought | Reality |
 |---|---|
-| "The skill says never apply labels" | It says never apply `claude/pickup`. `claude-drafted` is mandatory. |
+| "The skill says never apply labels" | It says never apply `agent/pickup`. `claude-drafted` is mandatory. |
 | "The user chose to skip labels" | They skipped the *content* label. `claude-drafted` is mandatory, and the flag labels are not content labels — skipping labels never drops them. |
 | "This issue is `non-autonomous`, so no marker" | `non-autonomous` issues get `claude-drafted` too. |
 | "The label doesn't exist in the repo yet" | Create it (local `gh`) or let GitHub auto-create it (remote MCP). Do not drop it. |
 | "I'm only rewriting/reviewing an existing issue" | Rewriting applies the marker too. See **Rewrite / review an existing issue**. |
+| "Mid is the dispatcher default, so no tier label is needed" | Always apply exactly one `model/*`, even `model/mid`. The label is what makes the choice visible and overridable. |
 | "That's a lot of labels — I'll pick the important one" | `claude-drafted` is mandatory, the content label is the user's choice, and the two flags are independent conditions. Applying fewer is not simplification. |
 
 ## Rewrite / review an existing issue
@@ -66,12 +71,17 @@ opinion. Review and rewrite are the same path — reviewing produces the correct
 2. Re-draft the title and body to the Step 2 template. Keep the author's facts; do not invent. If
    no suggested fix emerged, omit that section rather than inventing one.
 3. Run the implied fix against the non-autonomous trigger checklist and the draft against the
-   requires-review checklist, exactly as for a new issue. A rewrite is a new draft: re-screen it,
-   do not inherit the old verdict.
+   requires-review checklist, exactly as for a new issue, and re-pick the model tier. A rewrite is a
+   new draft: re-screen it, do not inherit the old verdict.
 4. Compute the full intended label set — **including `claude-drafted`**, plus the content label,
    plus `non-autonomous` if that screen fires, plus `requires-review` if the review screen fires,
-   plus any pre-existing labels the human already put there. Never `claude/pickup`, and never strip
-   a label a human added.
+   plus any pre-existing labels the human already put there, plus exactly one `model/*` label. Never
+   `agent/pickup`, and never strip a label a human added.
+
+   If the issue already carries a `model/*` label that differs from the tier you picked, show both
+   in Step 3 and let the user choose — the existing label may be a human's deliberate call. Only
+   when they pick yours do you swap it (`--remove-label model/<old> --add-label model/<new>`); that
+   instruction is the one exception to the add-only rule below, alongside the flag toggles.
 5. Show the re-drafted issue and go through the same confirmation loop (Step 3 / Step 4), with
    **update** in place of create.
 6. Write it back and verify:
@@ -91,7 +101,7 @@ opinion. Review and rewrite are the same path — reviewing produces the correct
    is the `review-flagged-issues` skill, which re-checks each flagged draft against the current repo
    and holds anything it cannot verify.
 
-An issue already carrying `claude/pickup` is **armed**. Say so before rewriting, and ask whether to
+An issue already carrying `agent/pickup` is **armed**. Say so before rewriting, and ask whether to
 proceed — the human's gate has already been passed and the worker may pick it up mid-edit.
 
 ## The non-autonomous flag
@@ -119,7 +129,7 @@ When flagged, this is the **first content in the body**, above `## Description`,
 
 ```
 > ⚠️ **`non-autonomous`** — requires human intervention; not for autonomous pickup.
-> Do **not** add `claude/pickup`. See **Human intervention required** below.
+> Do **not** add `agent/pickup`. See **Human intervention required** below.
 ```
 
 ### Human intervention required
@@ -180,7 +190,7 @@ too:
 
 ```
 > 🔎 **`requires-review`** — a human must review this draft before arming it.
-> Do **not** add `claude/pickup` until reviewed.
+> Do **not** add `agent/pickup` until reviewed.
 > Blocked by: <#N | owner/repo#N | PR #N | branch-name>
 > Why: <one line — what in this draft that landing may invalidate>.
 ```
@@ -195,6 +205,28 @@ perform, `requires-review` states one reason, and the reason lives in the banner
 
 **When both flags fire**, the `non-autonomous` banner comes first, then the `requires-review`
 banner, then `## Human intervention required`, then `## Description` and the rest.
+
+## The model tier
+
+The dispatcher runs the issue-worker on the model its `model/*` label maps to. As a rough guide: `model/mini` is a Haiku-class model, `model/mid` a Sonnet-class model, `model/max` an Opus-class model. With no label the worker's usual model runs, which is mid. The label changes only the model, never the turn or budget limits.
+
+For a bug, the tier turns mostly on **whether the root cause is pinned down**:
+
+| Tier | When |
+|---|---|
+| `model/mini` | Cause known and the fix site named — file and function — and the fix is small and mechanical. An off-by-one, a wrong comparison, a missing null check, a bad constant. |
+| `model/mid` | **The target.** Cause known or narrowed to one area; the fix needs some judgement — a few files, a regression test, following existing patterns. |
+| `model/max` | Only symptoms are known, or the fix cuts across several modules, or it touches concurrency, security or data migration. Diagnosis is part of the job. |
+
+### Pin the cause before filing
+
+This is a lean, not a rule: aim for `model/mid` or below. This session has the conversation's context and runs on a high-reasoning model; the worker starts cold. So when the cause is not yet known, try to find it **before** filing — read the code the symptom points at, trace the path, check the obvious suspects — and write what you found into `## Description` and the suggested fix. A bug whose cause is pinned rarely needs max.
+
+If the cause still cannot be pinned, file it as `model/max` and say so in the **Model tier** line. A `model/max` bug is a hint that the human may prefer to debug it interactively before arming it; the report says so.
+
+Bugs are usually one issue. Split only when the fix has genuinely independent parts, and then into mid-sized pieces — never fragment a mid fix into minis, since each run re-clones, re-reads and re-tests the repo.
+
+`model/max` is not `non-autonomous`, and an un-root-caused symptom is still not a `requires-review` trigger — the tier is where that uncertainty shows. A `non-autonomous` issue still gets a tier for when it is eventually armed.
 
 ## Process
 
@@ -258,15 +290,16 @@ Title: <concise imperative, e.g. "Fix: token expiry check uses < instead of <=">
 Labels: <one of: bug | enhancement | question | documentation — chosen based on issue content>
         <plus non-autonomous if the fix trips a trigger>
         <plus requires-review if the draft trips a review trigger>
+        <plus exactly one of model/mini | model/mid | model/max>
 
 ---
 
 > ⚠️ **`non-autonomous`** — requires human intervention; not for autonomous pickup.
-> Do **not** add `claude/pickup`. See **Human intervention required** below.
+> Do **not** add `agent/pickup`. See **Human intervention required** below.
 <omit these two lines entirely unless flagged non-autonomous>
 
 > 🔎 **`requires-review`** — a human must review this draft before arming it.
-> Do **not** add `claude/pickup` until reviewed.
+> Do **not** add `agent/pickup` until reviewed.
 > Blocked by: <#N | owner/repo#N | PR #N | branch-name>
 > Why: <what that landing may invalidate in this draft>.
 <omit these four lines entirely unless flagged requires-review>
@@ -295,7 +328,12 @@ Labels: <one of: bug | enhancement | question | documentation — chosen based o
 
 ## Environment
 <repo, branch, language versions, or other relevant context from the conversation>
+
+---
+**Model tier:** `model/<mini|mid|max>` — <one line: why this tier>
 ```
+
+The closing **Model tier** line is always present and always matches the `model/*` label. It tells a human why the tier was chosen, so they can disagree before arming.
 
 Then run the fix against the non-autonomous trigger checklist and the draft against the
 requires-review checklist. For each that fires, add its banner and its label to the set (and
@@ -303,22 +341,25 @@ requires-review checklist. For each that fires, add its banner and its label to 
 ask rather than assume. A judgement call in the fix, or a cause you inferred rather than read, does
 **not** fire `requires-review` — state it in the body and let the worker verify it.
 
+**Then pick the model tier** (see **The model tier**). If the cause is not pinned, try to pin it first (**Pin the cause before filing**) and update the draft with what you found. Write the **Model tier** line and add exactly one `model/*` label to the set.
+
 ### Step 3 — Show draft
 
 Display the full draft to the user. Above it, print the flag status and, for each flag that is on,
 the triggers that fired:
 
 ```
+Tier:  `model/<tier>` — <the one-line reason>
 Flags: `non-autonomous` — <ON: triggers that fired | off>
        `requires-review` — <ON: blocked by #N — what the landing may invalidate | off>
 ```
 
 Then ask, in every state, verbatim:
 
-> **Create this issue, edit it, or toggle a flag?
-> (create / edit / non-autonomous / requires-review / cancel)**
+> **Create this issue, edit it, change the tier, or toggle a flag?
+> (create / edit / mini / mid / max / non-autonomous / requires-review / cancel)**
 
-Naming a flag toggles it: on if it is off, off if it is on.
+Naming a flag toggles it: on if it is off, off if it is on. Naming a tier sets it.
 
 ### Step 4 — Confirmation loop
 
@@ -332,6 +373,8 @@ Naming a flag toggles it: on if it is off, off if it is on.
   If the user turns it on with no artifact to name, take the instruction and write
   `Blocked by: <none — author override>` so the later sweep can tell it apart from a real dependency
   hold. Turning it **off** removes both. Return to Step 3
+- **mini / mid / max** → set the tier: swap the `model/*` label in the set and rewrite the **Model
+  tier** line (the reason becomes "set by author" unless they gave one). Return to Step 3
 - **cancel** → stop immediately; do not create anything
 
 The user overrides the screen in either direction: they may turn a flag on that did not fire, or off
@@ -340,8 +383,8 @@ flag they mean — do not assume `non-autonomous`.
 
 ### Step 5 — Check labels
 
-Decide the final label set: the chosen content label, plus the `claude-drafted` marker, plus
-`non-autonomous` and/or `requires-review` for each flag that is on.
+Decide the final label set: the chosen content label, plus the `claude-drafted` marker, plus exactly
+one `model/*` label, plus `non-autonomous` and/or `requires-review` for each flag that is on.
 
 #### remote (MCP)
 
@@ -360,9 +403,9 @@ cosmetic).
       the content label only.
     - name one → `get_label` the name they give to confirm it exists, then use it.
 - The `claude-drafted` marker needs no pre-check: include it in the label set and it is
-  auto-created at issue time if missing. Same for `non-autonomous` and `requires-review` when their
-  flags are on — include them and let GitHub create them. Never ask the user to approve these three;
-  they are markers and flags, not content labels.
+  auto-created at issue time if missing. Same for the `model/*` label, and for `non-autonomous` and
+  `requires-review` when their flags are on — include them and let GitHub create them. Never ask the
+  user to approve these; they are markers, tiers and flags, not content labels.
 
 (The "seed the four default labels" convenience below is local-only — MCP can't batch-create
 labels. Remotely, just handle the single chosen label as above.)
@@ -415,6 +458,14 @@ gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx claude-
 This marker stamps every skill-created issue so you can later find them with
 `gh issue list --label claude-drafted`. It is applied even when the user skips the content label.
 
+**Always ensure the chosen tier label exists** (the dispatcher creates these in repos it watches; this covers the rest):
+
+```bash
+gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx model/<tier> \
+  || gh label create model/<tier> --repo <owner/repo> --color c5def5 \
+     --description "Run this item on the <tier> model tier (dispatcher)"
+```
+
 **When flagged `non-autonomous`**, ensure that label exists too:
 
 ```bash
@@ -442,26 +493,30 @@ the author-override marker), and its `Why:` says what that landing may invalidat
 The label set you are about to pass contains `claude-drafted`. If it does not, add it. Do not
 create the issue without it. Skipping the content label does not skip the marker or the flags.
 
+The label set contains **exactly one** `model/*` label, and the body's **Model tier** line names the
+same tier. With more than one, the dispatcher runs the highest, which silently undoes the choice.
+
 ### Step 6 — Create issue
 
 - **remote (MCP):** call `mcp__github__issue_write` with:
   - `method`: `create`
   - `owner` / `repo`: the confirmed target
   - `title`: the drafted title
-  - `labels`: the final set — the chosen content label (if kept) plus `"claude-drafted"`, plus
+  - `labels`: the final set — the chosen content label (if kept) plus `"claude-drafted"` and
+    `"model/<tier>"`, plus
     `"non-autonomous"` and/or `"requires-review"` for each flag that is on; omit the content label
     if the user skipped it, but **always keep `"claude-drafted"`** and keep any flag label — a user
-    skipping content labels was never asked about the flags. Never `"claude/pickup"`
+    skipping content labels was never asked about the flags. Never `"agent/pickup"`
   - `body`: the drafted body (omit the `## ⚠️ Suggested Fix` section entirely if no fix was
     identified — do not invent one; omit each banner, and `## Human intervention required`, when its
     flag is off):
 
     ```
     > ⚠️ **`non-autonomous`** — requires human intervention; not for autonomous pickup.
-    > Do **not** add `claude/pickup`. See **Human intervention required** below.
+    > Do **not** add `agent/pickup`. See **Human intervention required** below.
 
     > 🔎 **`requires-review`** — a human must review this draft before arming it.
-    > Do **not** add `claude/pickup` until reviewed.
+    > Do **not** add `agent/pickup` until reviewed.
     > Blocked by: <#N | owner/repo#N | PR #N | branch-name>
     > Why: <what that landing may invalidate in this draft>.
 
@@ -489,6 +544,9 @@ create the issue without it. Skipping the content label does not skip the marker
 
     ## Environment
     <environment>
+
+    ---
+    **Model tier:** `model/<tier>` — <why this tier>
     ```
 
 - **local (gh):**
@@ -499,12 +557,13 @@ create the issue without it. Skipping the content label does not skip the marker
     --title "<title>" \
     --label "<label>" \
     --label "claude-drafted" \
+    --label "model/<tier>" \
     --body "$(cat <<'EOF'
   > ⚠️ **`non-autonomous`** — requires human intervention; not for autonomous pickup.
-  > Do **not** add `claude/pickup`. See **Human intervention required** below.
+  > Do **not** add `agent/pickup`. See **Human intervention required** below.
 
   > 🔎 **`requires-review`** — a human must review this draft before arming it.
-  > Do **not** add `claude/pickup` until reviewed.
+  > Do **not** add `agent/pickup` until reviewed.
   > Blocked by: <#N | owner/repo#N | PR #N | branch-name>
   > Why: <what that landing may invalidate in this draft>.
 
@@ -532,6 +591,9 @@ create the issue without it. Skipping the content label does not skip the marker
 
   ## Environment
   <environment>
+
+  ---
+  **Model tier:** `model/<tier>` — <why this tier>
   EOF
   )"
   ```
@@ -539,8 +601,8 @@ create the issue without it. Skipping the content label does not skip the marker
 Add `--label "non-autonomous"` and/or `--label "requires-review"` for each flag that is on; omit
 each banner (and the `## Human intervention required` block) when its flag is off.
 Omit the content `--label "<label>"` (or leave it out of the MCP `labels` set) if the user
-chose to skip labels, but **always keep `claude-drafted`, and keep any flag label** — "skip labels"
-refers to the content label only.
+chose to skip labels, but **always keep `claude-drafted` and the `model/*` label, and keep any flag
+label** — "skip labels" refers to the content label only.
 Omit the `## ⚠️ Suggested Fix` section entirely if no fix was identified.
 
 ### Step 7 — Verify labels, then report
@@ -580,8 +642,21 @@ above. Do not merge the two into one loop; the marker check is unconditional and
 A body carrying the `requires-review` banner with no `requires-review` label is the exact failure
 this check exists to catch.
 
+**Then read the tier back** — exactly one `model/*` label, the one you chose:
+
+- **local (gh):**
+
+  ```bash
+  gh issue view <number> --repo <owner/repo> --json labels --jq '.labels[].name' | grep '^model/'
+  ```
+
+  If `model/<tier>` is missing, `gh issue edit <number> --repo <owner/repo> --add-label model/<tier>`. If another `model/*` label is there that you did not intend, report it rather than removing it.
+
+- **remote (MCP):** check the `issue_write` response labels the same way; re-apply with
+  `method: update` and the full intended `labels` array if needed.
+
 **Then report.** Print the created issue's URL, the labels actually present (e.g.
-`Stamped: bug, claude-drafted, requires-review`), then the base line, then one addendum per flag
+`Stamped: bug, claude-drafted, model/mid, requires-review`), then the base line, then one addendum per flag
 that is on:
 
 - **remote (MCP):** take the URL from the `issue_write` response (its `html_url` / `url` field).
@@ -591,6 +666,12 @@ that is on:
 
 > Stamped `claude-drafted`. List skill-created issues later with
 > `gh issue list --label claude-drafted`.
+> Tier: `model/<tier>` — change the label before arming if you disagree.
+
+**Plus, if `model/max`:**
+
+> `model/max` — <why: usually that the root cause is still unknown>. Consider debugging this one
+> interactively before arming it.
 
 **Plus, if `non-autonomous`:**
 
@@ -608,11 +689,15 @@ If issue creation fails: quote the exact error and stop.
 
 - ALWAYS apply `claude-drafted` to every issue this skill creates or rewrites — flagged or not,
   content label or not. See **Labels**. It is a marker, not an arming label; it triggers nothing
-- NEVER apply `claude/pickup`. Arming for autonomous pickup is the human's deliberate step — and it
+- NEVER apply `agent/pickup`. Arming for autonomous pickup is the human's deliberate step — and it
   is never right on a `non-autonomous` issue, nor on a `requires-review` issue until a human has
-  reviewed it. This prohibition covers `claude/pickup` only — it never licenses dropping
+  reviewed it. This prohibition covers `agent/pickup` only — it never licenses dropping
   `claude-drafted`
 - ALWAYS verify the marker landed after creating (Step 7) and re-apply it if it did not
+- ALWAYS apply exactly one `model/*` label, and write a matching **Model tier** line at the end of
+  the body. Aim for `model/mid` or below; try to pin the root cause before settling for `model/max`
+- NEVER apply a pickup label (`agent/pickup`, `agent/pickup-large`, `agent/backlog`, or a `claude/*`
+  alias) and never touch `ai/*` or `agent/research`
 - NEVER create an issue without showing the draft first
 - NEVER skip the label check
 - ALWAYS screen the implied fix against the non-autonomous trigger checklist before finalizing.

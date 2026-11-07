@@ -21,14 +21,15 @@ Personal Claude Code skills plugin for dev workflows.
 
 ### Issue labels
 
-The two issue-creation skills apply a mandatory marker plus two independent flags; arming an issue for the autonomous worker stays a human step.
+The two issue-creation skills apply a mandatory marker, a mandatory model tier and two independent flags; arming an issue for the autonomous worker stays a human step. The dispatcher's older `claude/*` label names (`claude/pickup` and so on) still work as aliases of the `agent/*` ones.
 
 | Label | Applied by | Meaning |
 |-------|-----------|---------|
 | `claude-drafted` | skill, always | Drafted by an issue-creation skill; awaiting human triage. Find them with `gh issue list --label claude-drafted`. Applied on every create **and** every rewrite, then read back and re-applied if it did not land |
 | `non-autonomous` | skill, when a trigger fires | The work needs a human — secrets, infra, pipelines, generated assets, third-party dashboards, aesthetic judgement. The issue body leads with a banner and a `## Human intervention required` list |
 | `requires-review` | skill, when a trigger fires | An **ordering** hold: the draft was written ahead of something that has not landed — an open PR, an open issue, an unmerged branch — or sits in a batch whose later items depend on earlier ones, so its facts may not survive that landing. The issue body leads with a banner naming the blocker on a `Blocked by:` line; if nothing concrete can be named, the flag does not apply. Design judgements and un-root-caused symptoms go in the issue body, not this flag. Cleared by `review-flagged-issues`, which re-checks each flagged draft against the current repo and only lifts the hold on evidence — everywhere else it takes an explicit user toggle |
-| `claude/pickup` | **human only** | Arms the issue for the github-dispatcher issue-worker (plan → test-first → PR). The skills never apply it, never on a `non-autonomous` issue, and not on a `requires-review` issue until a human has reviewed it |
+| `model/mini` / `model/mid` / `model/max` | skill, always exactly one | The model tier the dispatcher runs the issue-worker on (roughly Haiku / Sonnet / Opus class). Chosen by how much reasoning the worker still has to do after reading the body. The skills aim for `mid`: they settle open design decisions in the planning session and split work that would need `max` into mid-sized issues, without fragmenting mid work into minis. The bug skill tries to pin the root cause before filing. The body ends with a `Model tier:` line giving the reason; change the label before arming to override. `review-flagged-issues` re-picks it when it re-drafts a body |
+| `agent/pickup` (also `agent/pickup-large`, `agent/backlog`) | **human only** | Arms the issue for the github-dispatcher issue-worker (plan → test-first → PR). The skills never apply it, never on a `non-autonomous` issue, and not on a `requires-review` issue until a human has reviewed it |
 
 ## Requirements
 
