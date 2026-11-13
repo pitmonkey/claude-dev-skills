@@ -141,7 +141,7 @@ Title: <concise imperative — e.g. "Add retry with backoff to the GitHub poll l
 <relevant files/dirs/functions, related issues/PRs. Saves the agent grep turns; its turn budget is finite. N/A if none.>
 
 ## Constraints
-<deps, API/back-compat, performance, style rules not already in the target repo's CLAUDE.md. N/A if none.>
+<deps, API/back-compat, performance, style rules not already in the target repo's CLAUDE.md. For any code change, always include "Format only the files you change." N/A if none.>
 
 ## Known ambiguities
 <forks you already see — pre-decide them or say which way to lean, so the agent does not guess blindly. N/A if none.>
@@ -155,6 +155,10 @@ The closing **Model tier** line is not one of the eight sections; it is always p
 **Load-bearing sections:** *Acceptance criteria* (turns a vague ask into tests) and
 *Scope / Non-goals* (fences an unsupervised agent). Do not finalize an issue without real
 acceptance criteria.
+
+**An equivalence criterion names its proof.** A criterion that claims the new code matches existing code ("matches X", "byte for byte with X", "same output as X") must say how that is proven. The default is a differential test: commit a frozen copy of X under `tests/` and run both over the same inputs. Without it the worker writes example tests against its own implementation, which pass whether or not the two diverge.
+
+**Formatting stays local.** For any code change, `## Constraints` says "Format only the files you change." A worker that runs the formatter over the whole tree buries the real change under unrelated churn.
 
 ## The non-autonomous flag
 
@@ -264,6 +268,8 @@ banner, then `## Human intervention required`, then `## Problem / Context` and t
 
 The dispatcher runs the issue-worker on the model its `model/*` label maps to. As a rough guide: `model/mini` is a Haiku-class model, `model/mid` a Sonnet-class model, `model/max` an Opus-class model. With no label the worker's usual model runs, which is mid. The label changes only the model, never the turn or budget limits.
 
+The mapping is per harness. A `model/*` label takes effect only where the dispatcher's `model_by_tier` maps that harness; on a harness with no entry (by default, `ai/codex`) the label is ignored and the harness's own default model runs. Still apply the label — it records the intended tier and takes effect on Claude, or once the deployment maps the other harness.
+
 The tier is set by **how much reasoning the worker still has to do after reading the body**, not by how big the diff is.
 
 | Tier | When |
@@ -281,6 +287,8 @@ This is a lean, not a rule. Most issues should land at `model/mid`: one coherent
 - **Take mini when it is natural.** Work that is small by nature, or a clean piece that lifts out of a bigger job (a rename, a constant, a doc line), goes in as `model/mini`. Spot it; do not hunt for it.
 
 ### Bringing max down
+
+**Shared plumbing is a split signal.** A work item that changes shared plumbing (a core loop or entry point that every path runs through) and more than one implementation of an interface and a shared test suite is a split candidate even when every decision is closed: the worker gets each piece right in isolation and the defects land in the seams between them. Split it per implementation on top of a plumbing-only issue. If it cannot be split, it is `model/max`.
 
 When a draft reads as `model/max`, do not accept that at once. In order:
 
