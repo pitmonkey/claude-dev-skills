@@ -158,6 +158,10 @@ acceptance criteria.
 
 **An equivalence criterion names its proof.** A criterion that claims the new code matches existing code ("matches X", "byte for byte with X", "same output as X") must say how that is proven. The default is a differential test: commit a frozen copy of X under `tests/` and run both over the same inputs. Without it the worker writes example tests against its own implementation, which pass whether or not the two diverge.
 
+**Heuristic work gets proposed property tests.** When the work infers facts by parsing another program's text (shell commands, scripts, logs, transcripts) or scrubs or matches text, propose two more acceptance criteria. The first is a randomised property or fuzz test of the key invariants, for example "found after any realistic prefix; never found inside quoted text". The second is a sweep over a real corpus, where one exists, with its expected results stated. These are recommendations, not requirements: the user can drop them when reviewing the draft. Without them such work tends to go through round after round of example-based fixes that never converge.
+
+**Probe facts say where they live.** When you write facts you checked against real data into a body, give each one its location: the nesting level (a top-level record type, or a `payload.type` inside one) and the source (which program, CLI or SDK path, and version). A worker reads an unlocated name at the wrong level.
+
 **Formatting stays local.** For any code change, `## Constraints` says "Format only the files you change." A worker that runs the formatter over the whole tree buries the real change under unrelated churn.
 
 ## The non-autonomous flag
@@ -370,6 +374,8 @@ Assess how much of the template the description already supplies. Score it again
 
 Do not invent facts to fill a section. Where something is genuinely unknown, ask (thin path)
 or record the fork under **Known ambiguities** so the agent is told which way to lean.
+
+**Surface policy questions; do not leave them unspoken.** When a criterion depends on a security or behaviour policy, the worker should not have to guess it. Examples are which values count as secrets and from which sources, failing closed versus an allow-list, and what happens on a cancel or timeout. Write the question under **Known ambiguities** as a lean: the recommended choice, the alternatives, and a one-line reason. If you cannot form a view, ask the user. A lean stays a suggestion: the worker follows it, or records a documented assumption saying why it chose otherwise. Write the policy as a fixed decision under `## Constraints` only when the user explicitly decides it (or when closing it is what brings a `model/max` draft down; see **Bringing max down**). An issue that asked for "the credentials the run handled" as secrets, with no sources or rule named, cost three review rounds before the owner decided. The missing piece was a written-down lean, not a hard rule.
 
 **Then run both screens.** First run the gathered work against the non-autonomous trigger checklist
 above.
