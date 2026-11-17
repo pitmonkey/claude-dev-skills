@@ -13,6 +13,7 @@ Personal Claude Code skills plugin for dev workflows.
 | `generating-commit-messages` | Generate conventional commit messages |
 | `gitgo` | Ship in one step: `sc` (docs+stage+commit) → `pr` (push+PR/MR, no confirm) → self-paced two-phase watch (confirms CI green, then swaps to main + pulls + sweeps the merged branch on merge). GitHub or GitLab |
 | `grill-me` | Interview user relentlessly about a plan or design |
+| `issue-batch-coordinator` | Coordinate a batch of GitHub issues through the autonomous `agent/pickup` issue-worker: order by dependency, probe ground truth, arm one issue at a time, wait for the dispatcher to release it, review each PR against the issues that follow it, patch, merge. Manually invoked only |
 | `pr` | Push branch and open a pull request (GitHub) or merge request (GitLab) — forge auto-detected |
 | `python-init` | Set up uv, pytest, ruff, mypy, pre-commit, CI for a Python project |
 | `review-flagged-issues` | Sweep every open `requires-review` issue in a repo, re-check each draft against the current repo, update bodies with facts now known, and clear the flag only on the issues whose hold is resolved — holding the rest with a named blocker, and lifting it from any flagged for a reason the flag never covered |
