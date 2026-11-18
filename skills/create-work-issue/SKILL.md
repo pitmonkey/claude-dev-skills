@@ -10,7 +10,7 @@ allowed-tools:
 ## Host compatibility
 
 This skill supports Claude Code and Codex. Explicit invocation may use the host’s native syntax (for example `/sc` or `$sc`). Follow repository instructions and host permissions; Claude `allowed-tools` metadata does not grant Codex permissions. When composing bundled skills, use the native skill mechanism when available; otherwise read and follow the sibling `SKILL.md` relative to this installed skill directory, carrying the stated arguments. Never require a Claude `Skill` tool in Codex. Do not add assistant attribution to generated commits, issues, or requests.
-In Codex, the Claude remote/local routing below does not apply: discover GitHub connector capabilities first and select that transport only if all required issue reads, writes, and label verification are supported; otherwise use authenticated `gh`. Select one transport before writing and keep it throughout. If neither is available, return the prepared draft and explain the missing capability. Keep existing dispatcher labels and confirmation/read-back requirements. In Claude remote sessions, retain the routing below and never fall back to `gh` writes.
+In Codex, pick the GitHub transport as described in `references/transport.md` (read it before Step 1).
 
 
 # Create Work Issue
@@ -72,97 +72,11 @@ skill-created issues to triage.
 
 ## Rewrite / review an existing issue
 
-"Rewrite issue N with this skill", "review issue N", "fix up this issue", or a pasted issue URL
-means: **apply this skill to that issue and write the result back.** It is not a read-only
-opinion. Review and rewrite are the same path — reviewing produces the corrected issue.
-
-1. Read the issue (`gh issue view N --repo <owner/repo> --json title,body,labels`, or
-   `mcp__github__issue_read` remotely).
-2. Re-draft the title and body to the full template — every section present, empty ones `N/A`.
-   Keep the author's facts; do not invent. Genuine gaps are asked about (thin path) or recorded
-   under **Known ambiguities**.
-3. Run **both** screens — non-autonomous and requires-review — against the work as re-drafted,
-   exactly as for a new issue, and re-pick the model tier. A rewrite is a new draft: re-screen it,
-   do not inherit the old verdict.
-4. Compute the full intended label set — **including `claude-drafted`**, plus `non-autonomous` if
-   that screen fires, plus `requires-review` if the review screen fires, plus any pre-existing
-   labels the human already put there, plus exactly one `model/*` label. Never `agent/pickup`, and
-   never strip a label a human added.
-
-   If the issue already carries a `model/*` label that differs from the tier you picked, show both
-   in Step 3 and let the user choose — the existing label may be a human's deliberate call. Only
-   when they pick yours do you swap it (`--remove-label model/<old> --add-label model/<new>`); that
-   instruction is the one exception to the add-only rule below, alongside the flag toggles.
-5. Show the re-drafted issue and go through the same confirmation loop (Step 3 / Step 4), with
-   **update** in place of create.
-6. Write it back and verify:
-   - **local:** `gh issue edit N --repo <owner/repo> --title "<title>" --body "<body>" --add-label claude-drafted`
-     (add `--add-label non-autonomous` and/or `--add-label requires-review` for each flag that
-     fires). Use `--add-label`, never `--remove-label` on a label you did not add.
-   - **remote:** `mcp__github__issue_write` with `method: update`, the issue number, and the full
-     label set.
-
-   The `--add-label`-only rule protects labels a human added. If the user explicitly toggles a flag
-   **off** during the confirmation loop on an issue that already carries it, that is an instruction,
-   not an inference: `gh issue edit N --repo <owner/repo> --remove-label requires-review` is allowed
-   **there and only there**. Never remove a flag on your own judgement that the draft now looks
-   fine. The one sanctioned sweep that clears `requires-review` on evidence rather than on a toggle
-   is the `review-flagged-issues` skill, which re-checks each flagged draft against the current repo
-   and holds anything it cannot verify.
-
-   Then run the same read-back verification as Step 8.
-
-An issue already carrying `agent/pickup` is **armed**. Say so before rewriting, and ask whether to
-proceed — the human's gate has already been passed and the worker may pick it up mid-edit.
+"Rewrite issue N with this skill", "review issue N", "fix up this issue", or a pasted issue URL means: apply this skill to that issue and write the result back. **Read `references/rewrite-existing.md` now, before reading the issue.**
 
 ## The work-order template
 
-Every issue carries all eight sections. Each exists to kill one class of bad assumption the
-headless agent would otherwise make. Empty sections are marked `N/A` (never deleted).
-
-```
-Title: <concise imperative — e.g. "Add retry with backoff to the GitHub poll loop">
-
-## Problem / Context
-<why this work exists — what's wrong, missing, or needed. 2–4 sentences.>
-
-## Goal / Outcome
-<what "done" looks like, 1–2 sentences.>
-
-## Acceptance criteria
-<checklist of testable conditions — the spec the agent's test-first implementation writes tests against>
-- [ ] ...
-- [ ] ...
-
-## Scope / Non-goals
-<explicit fences — what NOT to touch or build. There is no human to say "stop, too far".>
-
-## Pointers
-<relevant files/dirs/functions, related issues/PRs. Saves the agent grep turns; its turn budget is finite. N/A if none.>
-
-## Constraints
-<deps, API/back-compat, performance, style rules not already in the target repo's CLAUDE.md. For any code change, always include "Format only the files you change." N/A if none.>
-
-## Known ambiguities
-<forks you already see — pre-decide them or say which way to lean, so the agent does not guess blindly. N/A if none.>
-
----
-**Model tier:** `model/<mini|mid|max>` — <one line: why this tier>
-```
-
-The closing **Model tier** line is not one of the eight sections; it is always present and always matches the `model/*` label. It tells a human why the tier was chosen, so they can disagree before arming.
-
-**Load-bearing sections:** *Acceptance criteria* (turns a vague ask into tests) and
-*Scope / Non-goals* (fences an unsupervised agent). Do not finalize an issue without real
-acceptance criteria.
-
-**An equivalence criterion names its proof.** A criterion that claims the new code matches existing code ("matches X", "byte for byte with X", "same output as X") must say how that is proven. The default is a differential test: commit a frozen copy of X under `tests/` and run both over the same inputs. Without it the worker writes example tests against its own implementation, which pass whether or not the two diverge.
-
-**Heuristic work gets proposed property tests.** When the work infers facts by parsing another program's text (shell commands, scripts, logs, transcripts) or scrubs or matches text, propose two more acceptance criteria. The first is a randomised property or fuzz test of the key invariants, for example "found after any realistic prefix; never found inside quoted text". The second is a sweep over a real corpus, where one exists, with its expected results stated. These are recommendations, not requirements: the user can drop them when reviewing the draft. Without them such work tends to go through round after round of example-based fixes that never converge.
-
-**Probe facts say where they live.** When you write facts you checked against real data into a body, give each one its location: the nesting level (a top-level record type, or a `payload.type` inside one) and the source (which program, CLI or SDK path, and version). A worker reads an unlocated name at the wrong level.
-
-**Formatting stays local.** For any code change, `## Constraints` says "Format only the files you change." A worker that runs the formatter over the whole tree buries the real change under unrelated churn.
+Every issue carries all eight template sections (empty ones `N/A`, never deleted) and a closing **Model tier** line. **Read `references/work-order-template.md` before drafting (Step 2).**
 
 ## The non-autonomous flag
 
@@ -187,27 +101,11 @@ the API key" needs no key and is autonomous; "rotate the API key" is not.
 
 ### Banner
 
-When flagged, this is the **first content in the body**, above `## Problem / Context`, verbatim:
-
-```
-> ⚠️ **`non-autonomous`** — requires human intervention; not for autonomous pickup.
-> Do **not** add `agent/pickup`. See **Human intervention required** below.
-```
+When flagged, a verbatim banner is the **first content in the body**, above `## Problem / Context`. **Read `references/banners.md` for its exact text.**
 
 ### Human intervention required
 
-Immediately after the banner, one concrete bullet per blocker — what a human must actually do, not
-a restatement of the trigger category:
-
-```
-## Human intervention required
-- Stripe secret key must be added to repo secrets as `STRIPE_WEBHOOK_SECRET`
-- Webhook endpoint must be registered in the Stripe dashboard
-```
-
-The banner and this section are **conditional**: they appear only when the issue is flagged. Unlike
-the eight template sections, they are never rendered as `N/A` — an unflagged issue simply has
-neither.
+Immediately after the banner, a `## Human intervention required` section with one concrete bullet per blocker — what a human must actually do, not the trigger category. The banner and this section appear only when flagged, never as `N/A`. Example: `references/banners.md`.
 
 ## The requires-review flag
 
@@ -248,25 +146,7 @@ back and re-run each one against the gate — a real ordering hold is the except
 
 ### Banner
 
-When flagged, this goes in the body verbatim, with both fields filled in:
-
-```
-> 🔎 **`requires-review`** — a human must review this draft before arming it.
-> Do **not** add `agent/pickup` until reviewed.
-> Blocked by: <#N | owner/repo#N | PR #N | branch-name>
-> Why: <one line — what in this draft that landing may invalidate>.
-```
-
-The banner and the label are **one unit**. Never write the banner without adding `requires-review`
-to the label set, and never add the label without the banner. `Blocked by:` names a real artifact —
-if you have nothing to put there, the flag does not apply. `Why:` says what the landing may
-invalidate; "may need review" is not a reason.
-
-There is no separate body section: unlike `non-autonomous`, which lists actions a human must
-perform, `requires-review` states one blocker, and it lives in the banner.
-
-**When both flags fire**, the `non-autonomous` banner comes first, then the `requires-review`
-banner, then `## Human intervention required`, then `## Problem / Context` and the rest.
+When flagged, the body carries a verbatim banner with both `Blocked by:` and `Why:` filled in; banner and label are one unit. When both flags fire, the `non-autonomous` banner comes first, then this one, then `## Human intervention required`. **Read `references/banners.md` for the exact text.**
 
 ## The model tier
 
@@ -292,39 +172,11 @@ This is a lean, not a rule. Most issues should land at `model/mid`: one coherent
 
 ### Bringing max down
 
-**Shared plumbing is a split signal.** A work item that changes shared plumbing (a core loop or entry point that every path runs through) and more than one implementation of an interface and a shared test suite is a split candidate even when every decision is closed: the worker gets each piece right in isolation and the defects land in the seams between them. Split it per implementation on top of a plumbing-only issue. If it cannot be split, it is `model/max`.
-
-When a draft reads as `model/max`, do not accept that at once. In order:
-
-1. **Close the open decisions.** Each design fork the worker would have to resolve — settle it now, by asking the user (one question at a time) or by reading the repo, and write the answer into the body as a decision (under `## Constraints` or `## Scope / Non-goals`), not as a lean under `## Known ambiguities`. Fewer open forks, lower tier.
-2. **Split.** If it is still max, propose an ordered batch of **mid-sized** issues (with a mini only where a piece is naturally that small). Each gets its own acceptance criteria and its own tier, and each later issue names the earlier one it builds on under `## Pointers`. Run the requires-review screen on each: a later issue written ahead of an earlier one that has not landed is exactly that flag's batch trigger.
-3. **Accept max** only when splitting does not help — a change that must land atomically, or a diagnosis that cannot be cut into parts. Say which in the **Model tier** line. A `model/max` issue is a hint that the human may prefer to work it interactively before arming it; the report says so.
-
-A split is a proposal: show it in the draft (Step 3) and create nothing until the user confirms the breakdown.
-
-**Sanity checks, both ways.** If most of a batch comes out `model/max`, stop and re-plan — the thinking has not been done yet. If one piece of work has become a handful of `model/mini` issues, merge them back into one `model/mid` issue.
-
-`model/max` is not `non-autonomous`. Max means the worker can do it but needs the most capable model; non-autonomous means a bot cannot do it at all. The two are independent, and a `non-autonomous` issue still gets a tier for when it is eventually armed.
+When a draft reads as `model/max`, or the work changes shared plumbing (a core loop or entry point every path runs through), do not accept max at once. **Read `references/bringing-max-down.md` now.**
 
 ## Process
 
-**First, pick the GitHub path.** This skill talks to GitHub two ways, and which one works
-depends on where it runs. Detect it once, up front:
-
-```bash
-[ "${CLAUDE_CODE_REMOTE:-}" = "true" ] && echo remote || echo local
-```
-
-- **`remote`** — a web / phone / headless session (Claude Code on the web). The `gh` CLI
-  **cannot** create issues here: the session's egress proxy serves `gh` only a narrow
-  allowlist, and repo-scoped calls (`gh repo view`, `gh issue create`, `gh label ...`) come
-  back **HTTP 403** ("GitHub access is not enabled for this session"). Use the **GitHub MCP
-  tools** (`mcp__github__*`) instead — that is the sanctioned GitHub path in remote sessions.
-- **`local`** — a local terminal session. Use the **`gh` CLI** as before; it authenticates
-  with your `gh auth login` credentials.
-
-Every mechanical step below gives the command for both paths. Run the whole flow on **one**
-path — do not mix. The drafting steps (0, 2–5) are identical either way.
+**First, pick the GitHub path** — the GitHub MCP tools in a remote session (`CLAUDE_CODE_REMOTE=true`), the `gh` CLI locally — and run the whole flow on that one path. **Read `references/transport.md` now**: it gives the detection command and the reason `gh` fails remotely. The drafting steps (0, 2–5) are identical on both paths.
 
 ### Step 0 — Parse arguments
 
@@ -336,26 +188,7 @@ work (e.g. `/create-work-issue pitmonkey/foo add retry with backoff to the poll 
 
 ### Step 1 — Detect and confirm repo
 
-If an `owner/repo` arg was given, use it. Otherwise detect the target repo:
-
-- **remote (MCP):** `gh repo view` does **not** work here — the git remote points at the
-  session proxy, not github.com. Parse owner/repo from the remote URL instead:
-
-  ```bash
-  git remote get-url origin | sed -E 's#\.git$##' | awk -F/ '{print $(NF-1)"/"$NF}'
-  ```
-
-- **local (gh):**
-
-  ```bash
-  gh repo view --json nameWithOwner --jq '.nameWithOwner'
-  ```
-
-Show the detected repo to the user and ask them to confirm before continuing.
-
-If detection fails or returns nothing: stop and ask the user to provide the repo manually
-(`owner/repo`). On the **local** path, if `gh` is not authenticated: stop and tell the user to
-run `gh auth login`.
+If an `owner/repo` arg was given, use it. Otherwise detect it with the command for your path in `references/transport.md`. Show the detected repo to the user and ask them to confirm before continuing. If detection fails, ask for `owner/repo`; on the local path, if `gh` is not authenticated, stop and tell the user to run `gh auth login`.
 
 ### Step 2 — Adaptive gather (this is the key step)
 
@@ -424,25 +257,7 @@ Naming a flag toggles it: on if it is off, off if it is on. Naming a tier sets i
 
 ### Step 4 — Confirmation loop
 
-- **create** → proceed to Step 5.
-- **edit** → the user describes the change in plain text; rewrite the relevant section(s) and
-  return to Step 3.
-- **non-autonomous** → toggle the flag. Turning it **on** adds the banner, `## Human intervention
-  required`, and `non-autonomous` to the label set; if you do not already know what the human must
-  do, interview it (one question at a time) before re-showing. Turning it **off** removes all
-  three. Return to Step 3.
-- **requires-review** → toggle the flag. Turning it **on** adds the banner and `requires-review` to
-  the label set; the banner needs a concrete `Blocked by:` and `Why:` — ask if you do not have them.
-  If the user turns it on with no artifact to name, take the instruction and write
-  `Blocked by: <none — author override>` so the later sweep can tell it apart from a real dependency
-  hold. Turning it **off** removes both. Return to Step 3.
-- **mini / mid / max** → set the tier: swap the `model/*` label in the set and rewrite the **Model
-  tier** line (the reason becomes "set by author" unless they gave one). Return to Step 3.
-- **cancel** → stop immediately; do not create anything.
-
-The user overrides the screen in either direction: they may turn a flag on that did not fire, or off
-that did. Never toggle a flag they did not ask you to. If they just say `flag` or `unflag`, ask which
-flag they mean — do not assume `non-autonomous`.
+**create** → Step 5. **cancel** → stop and create nothing. For **edit**, a tier, or a flag toggle, **read `references/confirmation-loop.md` now** and follow it, then return to Step 3. Never toggle a flag the user did not ask for.
 
 ### Step 5 — Quality gate
 
@@ -468,234 +283,15 @@ Before creating, verify:
 
 ### Step 6 — Ensure the label set exists
 
-The label set is `claude-drafted`, plus exactly one `model/*` label, plus `non-autonomous` and/or
-`requires-review` for each flag that is on.
-
-- **remote (MCP):** No separate create step is needed — pass the whole set in the `labels` array
-  when you create the issue (Step 7) and GitHub auto-creates any missing label (this covers
-  `claude-drafted`, the `model/*` label, `non-autonomous` and `requires-review` — the MCP token has push access,
-  so a label is created on first use). Optionally check first with
-  `mcp__github__get_label` (owner, repo, name) so you can tell the user whether a label is brand
-  new. A freshly auto-created label gets a default color — that is cosmetic and fine; recolor it
-  later if you care.
-- **local (gh):** create each label in the set if it does not already exist:
-
-  ```bash
-  gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx claude-drafted \
-    || gh label create claude-drafted --repo <owner/repo> --color 5319e7 \
-       --description "Drafted by a Claude issue-creation skill; awaiting human triage"
-  ```
-
-  The chosen tier label (the dispatcher creates these in repos it watches; this covers the rest):
-
-  ```bash
-  gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx model/<tier> \
-    || gh label create model/<tier> --repo <owner/repo> --color c5def5 \
-       --description "Run this item on the <tier> model tier (dispatcher)"
-  ```
-
-  Only when flagged `non-autonomous`:
-
-  ```bash
-  gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx non-autonomous \
-    || gh label create non-autonomous --repo <owner/repo> --color d93f0b \
-       --description "Needs human intervention — not for autonomous issue-worker pickup"
-  ```
-
-  Only when flagged `requires-review`:
-
-  ```bash
-  gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx requires-review \
-    || gh label create requires-review --repo <owner/repo> --color fbca04 \
-       --description "Draft written ahead of an unlanded dependency — review before arming"
-  ```
-
-  Never recolor or re-describe a label that already exists — take it as it is.
+The label set is `claude-drafted`, plus exactly one `model/*` label, plus `non-autonomous` and/or `requires-review` for each flag that is on. **Read `references/github-writes.md` now** — commands and report text for Steps 6–8.
 
 ### Step 7 — Create issue
 
-- **remote (MCP):** call `mcp__github__issue_write` with:
-  - `method`: `create`
-  - `owner` / `repo`: the confirmed target
-  - `title`: the drafted title
-  - `labels`: `["claude-drafted", "model/<tier>"]`, plus `"non-autonomous"` and/or `"requires-review"`
-    for each flag that is on — **never `agent/pickup`**, on any kind of issue
-  - `body`: the full eight-section body (all sections; empty ones marked `N/A`), preceded by the
-    banner(s) and `## Human intervention required` **only for the flags that are on**:
-
-    ```
-    > ⚠️ **`non-autonomous`** — requires human intervention; not for autonomous pickup.
-    > Do **not** add `agent/pickup`. See **Human intervention required** below.
-
-    > 🔎 **`requires-review`** — a human must review this draft before arming it.
-    > Do **not** add `agent/pickup` until reviewed.
-    > Blocked by: <#N | owner/repo#N | PR #N | branch-name>
-    > Why: <what that landing may invalidate in this draft>.
-
-    ## Human intervention required
-    - <what a human must do>
-
-    ## Problem / Context
-    <...>
-
-    ## Goal / Outcome
-    <...>
-
-    ## Acceptance criteria
-    - [ ] <...>
-
-    ## Scope / Non-goals
-    <...>
-
-    ## Pointers
-    <... or N/A>
-
-    ## Constraints
-    <... or N/A>
-
-    ## Known ambiguities
-    <... or N/A>
-
-    ---
-    **Model tier:** `model/<tier>` — <why this tier>
-    ```
-
-- **local (gh):**
-
-  ```bash
-  gh issue create \
-    --repo <owner/repo> \
-    --title "<title>" \
-    --label "claude-drafted" \
-    --label "model/<tier>" \
-    --body "$(cat <<'EOF'
-  > ⚠️ **`non-autonomous`** — requires human intervention; not for autonomous pickup.
-  > Do **not** add `agent/pickup`. See **Human intervention required** below.
-
-  > 🔎 **`requires-review`** — a human must review this draft before arming it.
-  > Do **not** add `agent/pickup` until reviewed.
-  > Blocked by: <#N | owner/repo#N | PR #N | branch-name>
-  > Why: <what that landing may invalidate in this draft>.
-
-  ## Human intervention required
-  - <what a human must do>
-
-  ## Problem / Context
-  <...>
-
-  ## Goal / Outcome
-  <...>
-
-  ## Acceptance criteria
-  - [ ] <...>
-
-  ## Scope / Non-goals
-  <...>
-
-  ## Pointers
-  <... or N/A>
-
-  ## Constraints
-  <... or N/A>
-
-  ## Known ambiguities
-  <... or N/A>
-
-  ---
-  **Model tier:** `model/<tier>` — <why this tier>
-  EOF
-  )"
-  ```
-
-For a confirmed split, create the issues in order, earliest first, so each later body can name the real number of the one it builds on — fill those numbers in before creating the next.
-
-Add `--label "non-autonomous"` and/or `--label "requires-review"` for each flag that is on. Each
-banner, and the `## Human intervention required` block, is omitted entirely when its flag is off.
-
-**Apply `claude-drafted` and the `model/*` label (plus any flag labels that are on) — never `agent/pickup`.** The marker
-keeps the issue findable; arming stays the human's step.
+Create the issue with the full body — banners and `## Human intervention required` only for the flags that are on, then all eight sections — and the full label set. **Never `agent/pickup`.** For a confirmed split, create the issues earliest first so each later body can name the real number of the one it builds on. Commands: `references/github-writes.md`.
 
 ### Step 8 — Verify labels, then report
 
-**First, read the labels back.** A silently dropped marker is invisible otherwise.
-
-- **local (gh):**
-
-  ```bash
-  gh issue view <number> --repo <owner/repo> --json labels --jq '.labels[].name' \
-    | grep -qx claude-drafted \
-    || gh issue edit <number> --repo <owner/repo> --add-label claude-drafted
-  ```
-
-- **remote (MCP):** the `issue_write` response carries the applied labels. If `claude-drafted` is
-  absent, call `mcp__github__issue_write` with `method: update`, the issue number, and the full
-  intended `labels` array.
-
-If the re-apply also fails, quote the exact error and say the issue was created **without** the
-marker so the user can fix it by hand. Do not claim success.
-
-**Then, when flagged `requires-review`, read that back too** — separately, after the marker check
-above. Do not merge the two into one loop; the marker check is unconditional and stands alone.
-
-- **local (gh):**
-
-  ```bash
-  gh issue view <number> --repo <owner/repo> --json labels --jq '.labels[].name' \
-    | grep -qx requires-review \
-    || gh issue edit <number> --repo <owner/repo> --add-label requires-review
-  ```
-
-- **remote (MCP):** if `requires-review` is absent from the `issue_write` response labels, call
-  `mcp__github__issue_write` with `method: update`, the issue number, and the full intended `labels`
-  array.
-
-A body carrying the `requires-review` banner with no `requires-review` label is the exact failure
-this check exists to catch.
-
-**Then read the tier back** — exactly one `model/*` label, the one you chose:
-
-- **local (gh):**
-
-  ```bash
-  gh issue view <number> --repo <owner/repo> --json labels --jq '.labels[].name' | grep '^model/'
-  ```
-
-  If `model/<tier>` is missing, `gh issue edit <number> --repo <owner/repo> --add-label model/<tier>`. If another `model/*` label is there that you did not intend, report it rather than removing it.
-
-- **remote (MCP):** check the `issue_write` response labels the same way; re-apply with
-  `method: update` and the full intended `labels` array if needed.
-
-**Then report.** Print the created issue's URL, the labels actually present (e.g.
-`Stamped: claude-drafted, model/mid, non-autonomous, requires-review`), then the base line, then one
-addendum per flag that is on. For a batch, print one line per issue (number, title, tier) first.
-
-- **remote (MCP):** take the URL from the `issue_write` response (its `html_url` / `url` field).
-- **local (gh):** take the URL returned by `gh issue create`.
-
-**Always:**
-
-> Stamped `claude-drafted`. List candidates later with `gh issue list --label claude-drafted`,
-> then add `agent/pickup` to the ones you want the issue-worker to implement.
-> Tier: `model/<tier>` — change the label before arming if you disagree.
-
-**Plus, if `model/max`:**
-
-> `model/max` — <why splitting did not help>. Consider working this one interactively before
-> arming it.
-
-**Plus, if the work is long but not hard** (many files or acceptance criteria at mid or mini): suggest the human arm it with `agent/pickup-large` (more turns and budget, same model). Suggest only — never apply it.
-
-**Plus, if `non-autonomous`:**
-
-> Also `non-autonomous` — **excluded from autonomous pickup**; it needs a human first. Review them
-> with `gh issue list --label non-autonomous`.
-
-**Plus, if `requires-review`:**
-
-> Also `requires-review` — <the reason>. Read it before you arm it. Review them with
-> `gh issue list --label requires-review`.
-
-If issue creation fails: quote the exact error and stop.
+Read the labels back: `claude-drafted` first, then `requires-review` if flagged, then exactly one `model/*`, re-applying any that are missing. Then report the URL, the labels actually present, and the addenda that apply. If the marker cannot be applied, quote the error and do not claim success. If issue creation fails, quote the exact error and stop. Commands and report text: `references/github-writes.md`.
 
 ## Rules
 
@@ -709,40 +305,18 @@ If issue creation fails: quote the exact error and stop.
 - ALWAYS apply exactly one `model/*` label, and write a matching **Model tier** line at the end of
   the body. Aim for `model/mid`; bring `model/max` down by closing decisions and splitting before
   accepting it; never fragment mid work into minis.
-- NEVER apply a pickup label (`agent/pickup`, `agent/pickup-large`, `agent/backlog`, or a `claude/*`
-  alias) and never touch `ai/*` or `agent/research`.
-- ALWAYS screen the work against the non-autonomous trigger checklist before finalizing. Catching it
-  at creation is the whole point; a label added days later has already cost a wasted worker run.
 - NEVER apply `non-autonomous` without a non-empty `## Human intervention required` naming concrete
   human actions. A bare label tells the next reader nothing.
 - The banner text is verbatim and is the FIRST content in the body, above `## Problem / Context`.
-- The banner and `## Human intervention required` are conditional — omitted entirely when the issue
-  is not flagged. Never render them as `N/A`.
 - ALWAYS verify the marker landed after creating (Step 8) and re-apply it if it did not.
 - NEVER create an issue without showing the draft first.
 - NEVER finalize without real acceptance criteria — they are the spec the agent tests against.
 - NEVER add a "Generated with Claude Code" footer, "🤖" marker, or `Co-Authored-By: Claude` trailer to the issue body — no AI attribution.
-- Every issue carries all eight sections; empty ones are marked `N/A`, never deleted.
 - Do not invent facts to fill sections. Ask (thin path) or record the fork under Known
   ambiguities.
-- Pick the GitHub path from `CLAUDE_CODE_REMOTE` (Process preamble) and stay on it: MCP tools
-  in remote sessions, `gh` locally. Do not fall back to `gh` for issue/label writes in a remote
-  session — it returns HTTP 403.
-- On the local path, if `gh` is not authenticated, stop immediately and tell the user to run
-  `gh auth login`.
-- ALWAYS screen the draft against the requires-review trigger checklist too — separately from the
-  non-autonomous screen. They answer different questions: can a bot do this, versus was this draft
-  written ahead of something that has not landed.
-- `requires-review` is an ORDERING hold, not a "a human should think about this" hold. It NEVER
-  fires on a design or balance judgement (that goes under Known ambiguities with a lean), on a
-  symptom observed but not root-caused, or on work that is merely hard.
-- If you cannot name a concrete issue, PR, or branch in `Blocked by:`, the flag does not apply. Do
-  not flag an issue to express unease.
 - The `requires-review` label and its banner are ONE UNIT — never the banner without the label,
   never the label without the banner. A banner with no label is invisible to `gh issue list`.
 - The `requires-review` banner carries BOTH `Blocked by:` and `Why:`. "May need review" is not a
   reason, and a `Blocked by:` naming nothing leaves the flag unclearable by the later sweep.
-- If most of a batch comes out flagged, stop and re-screen. A label that fires on the majority
-  gates nothing.
 - NEVER clear `requires-review` from an existing issue in this skill on your own judgement. Clearing
   it on evidence is the `review-flagged-issues` skill's job; here it takes an explicit user toggle.

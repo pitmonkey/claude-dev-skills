@@ -10,7 +10,7 @@ allowed-tools:
 ## Host compatibility
 
 This skill supports Claude Code and Codex. Explicit invocation may use the host’s native syntax (for example `/sc` or `$sc`). Follow repository instructions and host permissions; Claude `allowed-tools` metadata does not grant Codex permissions. When composing bundled skills, use the native skill mechanism when available; otherwise read and follow the sibling `SKILL.md` relative to this installed skill directory, carrying the stated arguments. Never require a Claude `Skill` tool in Codex. Do not add assistant attribution to generated commits, issues, or requests.
-In Codex, the Claude remote/local routing below does not apply: discover GitHub connector capabilities first and select that transport only if all required issue reads, writes, and label verification are supported; otherwise use authenticated `gh`. Select one transport before writing and keep it throughout. If neither is available, return the prepared draft and explain the missing capability. Keep existing dispatcher labels and confirmation/read-back requirements. In Claude remote sessions, retain the routing below and never fall back to `gh` writes.
+In Codex, pick the GitHub transport as described in `references/transport.md` (read it before Step 1).
 
 
 # Create GitHub Bug Issue
@@ -62,47 +62,7 @@ skill-created issues to triage.
 
 ## Rewrite / review an existing issue
 
-"Rewrite issue N with this skill", "review issue N", "fix up this issue", or a pasted issue URL
-means: **apply this skill to that issue and write the result back.** It is not a read-only
-opinion. Review and rewrite are the same path — reviewing produces the corrected issue.
-
-1. Read the issue (`gh issue view N --repo <owner/repo> --json title,body,labels`, or
-   `mcp__github__issue_read` remotely).
-2. Re-draft the title and body to the Step 2 template. Keep the author's facts; do not invent. If
-   no suggested fix emerged, omit that section rather than inventing one.
-3. Run the implied fix against the non-autonomous trigger checklist and the draft against the
-   requires-review checklist, exactly as for a new issue, and re-pick the model tier. A rewrite is a
-   new draft: re-screen it, do not inherit the old verdict.
-4. Compute the full intended label set — **including `claude-drafted`**, plus the content label,
-   plus `non-autonomous` if that screen fires, plus `requires-review` if the review screen fires,
-   plus any pre-existing labels the human already put there, plus exactly one `model/*` label. Never
-   `agent/pickup`, and never strip a label a human added.
-
-   If the issue already carries a `model/*` label that differs from the tier you picked, show both
-   in Step 3 and let the user choose — the existing label may be a human's deliberate call. Only
-   when they pick yours do you swap it (`--remove-label model/<old> --add-label model/<new>`); that
-   instruction is the one exception to the add-only rule below, alongside the flag toggles.
-5. Show the re-drafted issue and go through the same confirmation loop (Step 3 / Step 4), with
-   **update** in place of create.
-6. Write it back and verify:
-   - **local:** `gh issue edit N --repo <owner/repo> --title "<title>" --body "<body>" --add-label claude-drafted`
-     (add `--add-label` for each other label in the set). Use `--add-label`, never `--remove-label`
-     on a label you did not add.
-   - **remote:** `mcp__github__issue_write` with `method: update`, the issue number, and the full
-     label set.
-
-   Then run the same read-back verification as Step 7.
-
-   The `--add-label`-only rule protects labels a human added. If the user explicitly toggles a flag
-   **off** during the confirmation loop on an issue that already carries it, that is an instruction,
-   not an inference: `gh issue edit N --repo <owner/repo> --remove-label requires-review` is allowed
-   **there and only there**. Never remove a flag on your own judgement that the draft now looks
-   fine. The one sanctioned sweep that clears `requires-review` on evidence rather than on a toggle
-   is the `review-flagged-issues` skill, which re-checks each flagged draft against the current repo
-   and holds anything it cannot verify.
-
-An issue already carrying `agent/pickup` is **armed**. Say so before rewriting, and ask whether to
-proceed — the human's gate has already been passed and the worker may pick it up mid-edit.
+"Rewrite issue N with this skill", "review issue N", "fix up this issue", or a pasted issue URL means: apply this skill to that issue and write the result back. Review and rewrite are the same path. **Read `references/rewrite-existing.md` now, before reading the issue** — it covers re-screening, label handling, the write-back commands, and what to do with an issue already carrying `agent/pickup`.
 
 ## The non-autonomous flag
 
@@ -230,23 +190,7 @@ Bugs are usually one issue. Split only when the fix has genuinely independent pa
 
 ## Process
 
-**First, pick the GitHub path.** This skill talks to GitHub two ways, and which one works
-depends on where it runs. Detect it once, up front:
-
-```bash
-[ "${CLAUDE_CODE_REMOTE:-}" = "true" ] && echo remote || echo local
-```
-
-- **`remote`** — a web / phone / headless session (Claude Code on the web). The `gh` CLI
-  **cannot** create issues or manage labels here: the session's egress proxy serves `gh` only
-  a narrow allowlist, and repo-scoped calls (`gh repo view`, `gh issue create`,
-  `gh label ...`) come back **HTTP 403** ("GitHub access is not enabled for this session").
-  Use the **GitHub MCP tools** (`mcp__github__*`) instead.
-- **`local`** — a local terminal session. Use the **`gh` CLI** as before; it authenticates
-  with your `gh auth login` credentials.
-
-Every mechanical step below gives the command for both paths. Run the whole flow on **one**
-path — do not mix. The drafting steps (0, 2–4) are identical either way.
+**First, pick the GitHub path** — the GitHub MCP tools in a remote session (`CLAUDE_CODE_REMOTE=true`), the `gh` CLI locally — and run the whole flow on that one path. **Read `references/transport.md` now**: it gives the detection command and the reason `gh` fails remotely. The drafting steps (0, 2–4) are identical on both paths.
 
 ### Step 0 — Parse arguments
 
@@ -257,26 +201,7 @@ Check if the user provided an `owner/repo` argument (e.g. `/create-github-bug-is
 
 ### Step 1 — Detect and confirm repo
 
-If no repo arg was given, detect the target repo:
-
-- **remote (MCP):** `gh repo view` does **not** work here — the git remote points at the
-  session proxy, not github.com. Parse owner/repo from the remote URL instead:
-
-  ```bash
-  git remote get-url origin | sed -E 's#\.git$##' | awk -F/ '{print $(NF-1)"/"$NF}'
-  ```
-
-- **local (gh):**
-
-  ```bash
-  gh repo view --json nameWithOwner --jq '.nameWithOwner'
-  ```
-
-Show the detected repo to the user and ask them to confirm before continuing.
-
-If detection fails or returns nothing: stop and ask the user to provide the repo manually
-(`owner/repo`). On the **local** path, if `gh` is not authenticated: stop and tell the user to
-run `gh auth login`.
+If no repo arg was given, detect it with the command for your path in `references/transport.md`. Show the detected repo to the user and ask them to confirm before continuing. If detection fails, ask for `owner/repo`; on the local path, if `gh` is not authenticated, stop and tell the user to run `gh auth login`.
 
 ### Step 2 — Extract issue from conversation
 
@@ -363,327 +288,19 @@ Naming a flag toggles it: on if it is off, off if it is on. Naming a tier sets i
 
 ### Step 4 — Confirmation loop
 
-- **create** → proceed to Step 5
-- **edit** → user describes the change in plain text; rewrite the relevant section(s) and return to Step 3
-- **non-autonomous** → toggle the flag. Turning it **on** adds the banner, `## Human intervention
-  required`, and `non-autonomous` to the label set; if you do not already know what the human must
-  do, ask before re-showing. Turning it **off** removes all three. Return to Step 3
-- **requires-review** → toggle the flag. Turning it **on** adds the banner and `requires-review` to
-  the label set; the banner needs a concrete `Blocked by:` and `Why:` — ask if you do not have them.
-  If the user turns it on with no artifact to name, take the instruction and write
-  `Blocked by: <none — author override>` so the later sweep can tell it apart from a real dependency
-  hold. Turning it **off** removes both. Return to Step 3
-- **mini / mid / max** → set the tier: swap the `model/*` label in the set and rewrite the **Model
-  tier** line (the reason becomes "set by author" unless they gave one). Return to Step 3
-- **cancel** → stop immediately; do not create anything
-
-The user overrides the screen in either direction: they may turn a flag on that did not fire, or off
-that did. Never toggle a flag they did not ask you to. If they just say `flag` or `unflag`, ask which
-flag they mean — do not assume `non-autonomous`.
+**create** → Step 5. **cancel** → stop and create nothing. For **edit**, a tier, or a flag toggle, **read `references/confirmation-loop.md` now** and follow it, then return to Step 3. Never toggle a flag the user did not ask for.
 
 ### Step 5 — Check labels
 
-Decide the final label set: the chosen content label, plus the `claude-drafted` marker, plus exactly
-one `model/*` label, plus `non-autonomous` and/or `requires-review` for each flag that is on.
-
-#### remote (MCP)
-
-MCP has no bulk label list or label-create tool, so the check is per-label and creation
-happens implicitly at issue time (GitHub auto-creates a referenced label if it is missing,
-because the MCP token has push access — a freshly created label gets a default color, which is
-cosmetic).
-
-- Check the chosen content label with `mcp__github__get_label` (owner, repo, name: `<label>`):
-  - **found** → keep it in the label set.
-  - **not found** → ask the user:
-    > Label `<label>` doesn't exist in this repo. Create it (it'll be added when the issue is
-    > created), skip labels, or name an existing label to use instead?
-    - create → keep `<label>` in the set (auto-created at issue time).
-    - skip → drop the content label; keep `claude-drafted` and any flag labels. "Skip labels" means
-      the content label only.
-    - name one → `get_label` the name they give to confirm it exists, then use it.
-- The `claude-drafted` marker needs no pre-check: include it in the label set and it is
-  auto-created at issue time if missing. Same for the `model/*` label, and for `non-autonomous` and
-  `requires-review` when their flags are on — include them and let GitHub create them. Never ask the
-  user to approve these; they are markers, tiers and flags, not content labels.
-
-(The "seed the four default labels" convenience below is local-only — MCP can't batch-create
-labels. Remotely, just handle the single chosen label as above.)
-
-#### local (gh)
-
-Check what labels exist in the target repo:
-
-```bash
-gh label list --repo <owner/repo> --json name --jq '.[].name'
-```
-
-**If the repo has no labels at all:**
-
-Offer to seed a default set before continuing:
-
-> Labels `bug`, `enhancement`, `question`, `documentation` don't exist in this repo. Create them now? (yes / skip)
-
-- yes → create each:
-  ```bash
-  gh label create bug         --repo <owner/repo> --color d73a4a
-  gh label create enhancement --repo <owner/repo> --color a2eeef
-  gh label create question    --repo <owner/repo> --color d876e3
-  gh label create documentation --repo <owner/repo> --color 0075ca
-  ```
-- skip → create the issue without a content label; the marker and any flag labels still apply
-
-**If the repo has labels but the suggested label is missing:**
-
-Ask:
-
-> Label `<label>` doesn't exist in this repo. Create it, skip labels, or choose an existing one?
-> Existing: <comma-separated list>
-
-- create → `gh label create <label> --repo <owner/repo> --color <sensible default>`
-- skip → create the issue without a content label; the marker and any flag labels still apply
-- choose → user picks from list; use that label
-
-**If the suggested label exists:** proceed directly.
-
-**Always ensure the `claude-drafted` marker label exists** (independent of the content-label
-choice above), creating it if missing:
-
-```bash
-gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx claude-drafted \
-  || gh label create claude-drafted --repo <owner/repo> --color 5319e7 \
-     --description "Drafted by a Claude issue-creation skill; awaiting human triage"
-```
-
-This marker stamps every skill-created issue so you can later find them with
-`gh issue list --label claude-drafted`. It is applied even when the user skips the content label.
-
-**Always ensure the chosen tier label exists** (the dispatcher creates these in repos it watches; this covers the rest):
-
-```bash
-gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx model/<tier> \
-  || gh label create model/<tier> --repo <owner/repo> --color c5def5 \
-     --description "Run this item on the <tier> model tier (dispatcher)"
-```
-
-**When flagged `non-autonomous`**, ensure that label exists too:
-
-```bash
-gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx non-autonomous \
-  || gh label create non-autonomous --repo <owner/repo> --color d93f0b \
-     --description "Needs human intervention — not for autonomous issue-worker pickup"
-```
-
-**When flagged `requires-review`**, ensure it exists too:
-
-```bash
-gh label list --repo <owner/repo> --json name --jq '.[].name' | grep -qx requires-review \
-  || gh label create requires-review --repo <owner/repo> --color fbca04 \
-     --description "Draft written ahead of an unlanded dependency — review before arming"
-```
-
-Never recolor or re-describe a label that already exists — take it as it is.
-
-#### Gate — before you create
-
-If the `requires-review` banner is in the body, `requires-review` is in the label set — and vice
-versa. One without the other is a bug. Its `Blocked by:` names a concrete issue, PR, or branch (or
-the author-override marker), and its `Why:` says what that landing may invalidate.
-
-The label set you are about to pass contains `claude-drafted`. If it does not, add it. Do not
-create the issue without it. Skipping the content label does not skip the marker or the flags.
-
-The label set contains **exactly one** `model/*` label, and the body's **Model tier** line names the
-same tier. With more than one, the dispatcher runs the highest, which silently undoes the choice.
+The final label set is the chosen content label, plus `claude-drafted`, plus exactly one `model/*` label, plus `non-autonomous` and/or `requires-review` for each flag that is on. A missing content label needs the user's create / pick / skip choice; "skip" drops only the content label. **Read `references/github-writes.md` now** — it has the label checks, the user prompts, and the commands for Steps 5, 6 and 7 on both paths.
 
 ### Step 6 — Create issue
 
-- **remote (MCP):** call `mcp__github__issue_write` with:
-  - `method`: `create`
-  - `owner` / `repo`: the confirmed target
-  - `title`: the drafted title
-  - `labels`: the final set — the chosen content label (if kept) plus `"claude-drafted"` and
-    `"model/<tier>"`, plus
-    `"non-autonomous"` and/or `"requires-review"` for each flag that is on; omit the content label
-    if the user skipped it, but **always keep `"claude-drafted"`** and keep any flag label — a user
-    skipping content labels was never asked about the flags. Never `"agent/pickup"`
-  - `body`: the drafted body (omit the `## ⚠️ Suggested Fix` section entirely if no fix was
-    identified — do not invent one; omit each banner, and `## Human intervention required`, when its
-    flag is off):
-
-    ```
-    > ⚠️ **`non-autonomous`** — requires human intervention; not for autonomous pickup.
-    > Do **not** add `agent/pickup`. See **Human intervention required** below.
-
-    > 🔎 **`requires-review`** — a human must review this draft before arming it.
-    > Do **not** add `agent/pickup` until reviewed.
-    > Blocked by: <#N | owner/repo#N | PR #N | branch-name>
-    > Why: <what that landing may invalidate in this draft>.
-
-    ## Human intervention required
-    - <what a human must do>
-
-    ## Description
-    <description>
-
-    ## Steps to Reproduce
-    <steps>
-
-    ## Expected Behaviour
-    <expected>
-
-    ## Actual Behaviour
-    <actual>
-
-    ## ⚠️ Suggested Fix (Unverified Hypothesis — Question This)
-    > This suggestion was generated from conversation context. It has NOT been verified,
-    > tested, or confirmed. Treat it as a starting point for investigation only — not a
-    > solution. Challenge and test before acting on it.
-
-    <fix>
-
-    ## Environment
-    <environment>
-
-    ---
-    **Model tier:** `model/<tier>` — <why this tier>
-    ```
-
-- **local (gh):**
-
-  ```bash
-  gh issue create \
-    --repo <owner/repo> \
-    --title "<title>" \
-    --label "<label>" \
-    --label "claude-drafted" \
-    --label "model/<tier>" \
-    --body "$(cat <<'EOF'
-  > ⚠️ **`non-autonomous`** — requires human intervention; not for autonomous pickup.
-  > Do **not** add `agent/pickup`. See **Human intervention required** below.
-
-  > 🔎 **`requires-review`** — a human must review this draft before arming it.
-  > Do **not** add `agent/pickup` until reviewed.
-  > Blocked by: <#N | owner/repo#N | PR #N | branch-name>
-  > Why: <what that landing may invalidate in this draft>.
-
-  ## Human intervention required
-  - <what a human must do>
-
-  ## Description
-  <description>
-
-  ## Steps to Reproduce
-  <steps>
-
-  ## Expected Behaviour
-  <expected>
-
-  ## Actual Behaviour
-  <actual>
-
-  ## ⚠️ Suggested Fix (Unverified Hypothesis — Question This)
-  > This suggestion was generated from conversation context. It has NOT been verified,
-  > tested, or confirmed. Treat it as a starting point for investigation only — not a
-  > solution. Challenge and test before acting on it.
-
-  <fix>
-
-  ## Environment
-  <environment>
-
-  ---
-  **Model tier:** `model/<tier>` — <why this tier>
-  EOF
-  )"
-  ```
-
-Add `--label "non-autonomous"` and/or `--label "requires-review"` for each flag that is on; omit
-each banner (and the `## Human intervention required` block) when its flag is off.
-Omit the content `--label "<label>"` (or leave it out of the MCP `labels` set) if the user
-chose to skip labels, but **always keep `claude-drafted` and the `model/*` label, and keep any flag
-label** — "skip labels" refers to the content label only.
-Omit the `## ⚠️ Suggested Fix` section entirely if no fix was identified.
+Create the issue with the full body — banners and `## Human intervention required` only for the flags that are on — and the final label set. **Never `agent/pickup`.** Commands: `references/github-writes.md`.
 
 ### Step 7 — Verify labels, then report
 
-**First, read the labels back.** A silently dropped marker is invisible otherwise.
-
-- **local (gh):**
-
-  ```bash
-  gh issue view <number> --repo <owner/repo> --json labels --jq '.labels[].name' \
-    | grep -qx claude-drafted \
-    || gh issue edit <number> --repo <owner/repo> --add-label claude-drafted
-  ```
-
-- **remote (MCP):** the `issue_write` response carries the applied labels. If `claude-drafted` is
-  absent, call `mcp__github__issue_write` with `method: update`, the issue number, and the full
-  intended `labels` array.
-
-If the re-apply also fails, quote the exact error and say the issue was created **without** the
-marker so the user can fix it by hand. Do not claim success.
-
-**Then, when flagged `requires-review`, read that back too** — separately, after the marker check
-above. Do not merge the two into one loop; the marker check is unconditional and stands alone.
-
-- **local (gh):**
-
-  ```bash
-  gh issue view <number> --repo <owner/repo> --json labels --jq '.labels[].name' \
-    | grep -qx requires-review \
-    || gh issue edit <number> --repo <owner/repo> --add-label requires-review
-  ```
-
-- **remote (MCP):** if `requires-review` is absent from the `issue_write` response labels, call
-  `mcp__github__issue_write` with `method: update`, the issue number, and the full intended `labels`
-  array.
-
-A body carrying the `requires-review` banner with no `requires-review` label is the exact failure
-this check exists to catch.
-
-**Then read the tier back** — exactly one `model/*` label, the one you chose:
-
-- **local (gh):**
-
-  ```bash
-  gh issue view <number> --repo <owner/repo> --json labels --jq '.labels[].name' | grep '^model/'
-  ```
-
-  If `model/<tier>` is missing, `gh issue edit <number> --repo <owner/repo> --add-label model/<tier>`. If another `model/*` label is there that you did not intend, report it rather than removing it.
-
-- **remote (MCP):** check the `issue_write` response labels the same way; re-apply with
-  `method: update` and the full intended `labels` array if needed.
-
-**Then report.** Print the created issue's URL, the labels actually present (e.g.
-`Stamped: bug, claude-drafted, model/mid, requires-review`), then the base line, then one addendum per flag
-that is on:
-
-- **remote (MCP):** take the URL from the `issue_write` response (its `html_url` / `url` field).
-- **local (gh):** take the URL returned by `gh issue create`.
-
-**Always:**
-
-> Stamped `claude-drafted`. List skill-created issues later with
-> `gh issue list --label claude-drafted`.
-> Tier: `model/<tier>` — change the label before arming if you disagree.
-
-**Plus, if `model/max`:**
-
-> `model/max` — <why: usually that the root cause is still unknown>. Consider debugging this one
-> interactively before arming it.
-
-**Plus, if `non-autonomous`:**
-
-> Also `non-autonomous` — **excluded from autonomous pickup**; it needs a human first. Review them
-> with `gh issue list --label non-autonomous`.
-
-**Plus, if `requires-review`:**
-
-> Also `requires-review` — <the reason>. Read it before you arm it. Review them with
-> `gh issue list --label requires-review`.
-
-If issue creation fails: quote the exact error and stop.
+Read the labels back: `claude-drafted` first, then `requires-review` if flagged, then exactly one `model/*`, re-applying any that are missing. Then report the URL, the labels actually present, and the addenda that apply. If the marker cannot be applied, quote the error and do not claim success. If issue creation fails, quote the exact error and stop. Commands and report text: `references/github-writes.md`.
 
 ## Rules
 
