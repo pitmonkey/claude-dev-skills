@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
+python3 scripts/check-skill-sizes.py >/dev/null
 python3 - <<'PY'
 import json
 import subprocess
 from pathlib import Path
-paths = [Path('.claude-plugin/plugin.json'), Path('.codex-plugin/plugin.json')]
+paths = [Path('.claude-plugin/plugin.json'), Path('.codex-plugin/plugin.json'), Path('.antigravity-plugin/plugin.json')]
 manifests = [json.loads(path.read_text()) for path in paths]
 version = manifests[0]['version']
 if any(item['version'] != version for item in manifests):

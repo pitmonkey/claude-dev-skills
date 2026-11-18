@@ -83,8 +83,24 @@ Python setup requires no external `python-pro` agent. New projects use shared `A
 
 `gitgo` uses Claude's loop integration where available and an interruptible, session-bound watch otherwise. No persistent Codex scheduler is installed. GitHub issue skills discover suitable connector capabilities in Codex, falling back to authenticated `gh` when needed. Existing dispatcher labels remain unchanged. `claude-allows` manages Claude settings in either host; it does not configure Codex permissions.
 
-Both plugin manifests share a version. The development pre-commit hook requires Python 3 and increments both together, rejecting invalid or mismatched versions.
+All plugin manifests (Claude, Codex and Antigravity) share a version. The development pre-commit hook requires Python 3 and increments them together, rejecting invalid or mismatched versions.
 
 Use `$codex-allows` (Codex) or `/claude-dev-skills:codex-allows` (Claude) to configure Codex permissions for selected workflows. See the [permission mapping](skills/codex-allows/references/permission-map.md). Command rules, sandbox access, and connector permissions are configured separately.
 
 `update-docs` preserves the existing instruction source: `CLAUDE.md` gets an `AGENTS.md -> CLAUDE.md` symlink, or `AGENTS.md` gets a `CLAUDE.md -> AGENTS.md` symlink. It edits the resolved source once and preserves the link on subsequent runs. If both are independent files, it preserves them and asks which should own the shared guidance before consolidation.
+
+## Antigravity support
+
+The repository also loads natively in Google Antigravity (`agy`) through `.antigravity-plugin/plugin.json`. Install from a local clone:
+
+```bash
+agy plugin install /path/to/claude-dev-skills
+```
+
+If the plugin is already installed in Claude Code, `agy plugin import claude` converts it instead. Check the plugin from the repository root:
+
+```bash
+agy plugin validate . --strict
+```
+
+Antigravity loads only the first 24,000 bytes of a `SKILL.md` body, so the larger skills keep their per-phase detail in `references/` files they read at the step that needs them. `scripts/check-skill-sizes.py` enforces the limit, and the pre-commit hook runs it before bumping the version.
